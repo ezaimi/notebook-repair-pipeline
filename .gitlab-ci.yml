@@ -1,0 +1,9 @@
+build_thesis:
+  image: texlive/texlive:latest
+  script:
+    - cd thesis
+    - latexmk -pdf -interaction=nonstopmode -file-line-error thesis.tex
+  artifacts:
+    paths:
+      - thesis/thesis.pdf
+    expire_in: 6 months
