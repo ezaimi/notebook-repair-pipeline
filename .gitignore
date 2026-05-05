@@ -1,1 +1,19 @@
 issues.py
+delete_issues_from_l3.py
+# LaTeX generated files
+*.aux
+*.bbl
+*.blg
+*.lof
+*.log
+*.lot
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+
+# Generated PDF
+thesis/thesis.pdf
+
+.claude/
