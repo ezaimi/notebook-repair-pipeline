@@ -16,4 +16,4 @@ delete_issues_from_l3.py
 # Generated PDF
 thesis/thesis.pdf
 
-.claude/
+.claude/*:Zone.Identifier
