@@ -1,0 +1,423 @@
+% =====================================================================
+%  Chapter: System Architecture  (L3 stub)
+%  Thesis: Integrating Open LLMs into the Jupyter Notebook
+%          Reproducibility Pipeline -- Erisa Zaimi, TU Chemnitz
+%
+%  SCOPE (L3): component contracts + interfaces + data contracts ONLY.
+%    - Prompt templates / model selection -> L4 chapter (LLM selection)
+%    - PyPI RAG retrieval internals        -> L5 chapter (RAG design)
+%    - Component implementation            -> Implementation chapter (i2--i7)
+%
+%  NOTES BEFORE USE:
+%   1. \cite{...} keys are PLACEHOLDERS. Map each to its key in
+%      bibliography.bib. Search "% CITE" to find every one.
+%   2. Code blocks use the core `verbatim` env so this builds with no
+%      extra packages. If your preamble loads `listings`/`minted`,
+%      switch them over for syntax highlighting (search "% LISTING").
+%   3. Tables use \hline (no booktabs dependency).
+%   4. If your class uses \section at top level, demote
+%      \chapter->\section, \section->\subsection, etc.
+% =====================================================================
+
+\chapter{System Architecture}
+\label{chap:architecture}
+
+This chapter specifies the design of the LLM-based repair layer that
+this thesis adds to the FAIR Jupyter reproducibility
+pipeline~\cite{samuel2024gigascience}.
+The existing pipeline ends at detecting and logging notebook execution
+failures; even its containerised
+evolution~\cite{samuel2025docker}
+stops at the point of execution, recording the residual failure without
+explaining or repairing it. The components described here attach at that
+point and carry a dependency-related failure through explanation, repair,
+re-execution, and structured logging.
+
+Following the taxonomy of Yang et al.~\cite{yang2025aprsurvey},
+the repair layer is realised as a \emph{procedural pipeline} rather than
+an agentic framework: a fixed sequence of components driven by a
+deterministic orchestrator. This choice is deliberate. Agentic loops
+achieve strong results on complex, multi-file bugs but incur latency and
+control overhead that scale poorly across a batch of dependency-error
+notebooks; the interactive notebook-repair agents of Grotov et
+al.~\cite{grotov2024untangling,grotov2024debug}
+further assume a live kernel and a user in the loop, neither of which is
+available in autonomous batch processing. The design goals follow from
+the non-functional requirements: components are modular with an injected
+configuration surface (NFR5), rely exclusively on open, locally
+deployable models (NFR1), process the full target set without manual
+intervention (NFR4), and are fully documented and version-controlled for
+reproducibility (NFR3).
+
+The scope of this chapter is the \emph{contracts} between components and
+the \emph{data} they exchange. Prompt design and model selection are
+specified in the chapter on LLM selection (level~L4); the internals of
+the PyPI-grounded retrieval step are specified in the chapter on RAG
+design (level~L5). % TODO: replace with \Cref once those chapters exist.
+
+% ---------------------------------------------------------------------
+\section{Design Overview}
+\label{sec:design-overview}
+
+The system can be stated in one sentence: \emph{when a notebook has
+failed because of a dependency error, read that failure, explain it in
+plain language, derive a fix from live PyPI data, apply the fix and
+re-run the notebook to check it, and record the result.} That sentence
+is partitioned into five components, each realising one thesis
+objective, sequenced by an orchestrator that realises pipeline
+integration (O5):
+
+\begin{table}[t]
+  \centering
+  \begin{tabular}{|l|l|p{7.2cm}|}
+    \hline
+    \textbf{Component} & \textbf{Objective} & \textbf{Responsibility} \\
+    \hline
+    ErrorClassifier  & FR1     & Confirm the failure is a fixable dependency error and identify the failing package (gatekeeper). \\
+    \hline
+    LLMExplainer     & O1      & Produce a plain-language explanation of the error. \\
+    \hline
+    RAGRepairAgent   & O2      & Derive a concrete fix, grounded in live PyPI metadata. \\
+    \hline
+    FixApplicator    & O3      & Apply the fix and re-execute the notebook to validate it. \\
+    \hline
+    ResultLogger     & O4, O6  & Persist the attempt to SQLite and enrich the knowledge graph. \\
+    \hline
+    Orchestrator     & O5      & Sequence the five components; expose the round and configuration switches. \\
+    \hline
+  \end{tabular}
+  \caption{The five repair components and the orchestrator, each mapped
+           to the objective it realises.}
+  \label{tab:components-objectives}
+\end{table}
+
+% ---------------------------------------------------------------------
+\section{Integration Point}
+\label{sec:integration-point}
+
+The containerised FAIR Jupyter pipeline~\cite{samuel2025docker}
+executes the notebooks of each repository inside a per-repository Docker
+container and writes one row per execution to the
+\texttt{notebook\_executions} table, tagging each failure with an
+\texttt{error\_category}. A pre-existing categorisation routine
+(\texttt{summary.py}) already maps \texttt{ModuleNotFoundError} and
+\texttt{ImportError} to \texttt{DEPENDENCY\_ERROR}. The repair layer
+activates on exactly those rows: it performs a batch pass over the
+\texttt{notebook\_executions} rows whose
+\texttt{error\_category = DEPENDENCY\_ERROR}.
+
+\paragraph{Re-execution substrate.}
+A candidate fix is validated by re-running the notebook \emph{inside the
+same Docker container the failure originated from}, top to bottom. Using
+the originating environment ensures that a successful re-execution is
+attributable to the applied fix rather than to an incidental difference
+in the environment.
+
+\paragraph{Context available at the hook-in point.}
+Each target row exposes the following fields, which form the raw input to
+the repair layer:
+\texttt{error\_type}, \texttt{error\_message}, \texttt{error\_cell\_index},
+\texttt{notebook\_id}, \texttt{repository\_id}, \texttt{notebook\_name},
+\texttt{url}, \texttt{total\_code\_cells}, \texttt{executed\_cells}
+(and \texttt{error\_category}).
+Additionally, the cloned repository is available on disk, providing
+\texttt{requirements.txt} and the \texttt{.ipynb} source; when the short
+\texttt{error\_message} is insufficient, the full traceback is readable
+from the legacy \texttt{executions.msg} column.
+
+\paragraph{Working set.}
+The committed Docker-run database contains \textbf{214}
+\texttt{DEPENDENCY\_ERROR} rows: 172 \texttt{ModuleNotFoundError} and 42
+\texttt{ImportError}. A small number ($\approx 10$) are system-library
+failures (missing \texttt{.so} objects) that require \texttt{apt-get}
+rather than \texttt{pip} and fall outside the pip-based fix scope of this
+thesis; the pip-fixable working set is therefore $\approx\!204$. The
+larger reproducibility figures from the complete conda
+run~\cite{samuel2024gigascience}
+motivate the scale of the problem and are reported in the dataset
+chapter. % TODO: \Cref dataset/evaluation chapter once labelled.
+Should 204 targets prove insufficient for evaluation, the Grotov
+buggy-notebook dataset~\cite{grotov2024untangling} is a named fallback.
+
+% ---------------------------------------------------------------------
+\section{Component Architecture}
+\label{sec:components}
+
+\begin{figure}[t]
+  \centering
+  % LISTING / FIGURE TODO:
+  % Export the box-and-arrow component diagram from
+  % docs/architecture-note.md and include it here, e.g.:
+  % \includegraphics[width=\textwidth]{figures/architecture-components.pdf}
+  \fbox{\parbox{0.9\textwidth}{\centering\vspace{1.6cm}%
+    \textbf{[ component diagram placeholder ]}\\[4pt]
+    \texttt{notebook\_executions} (DEPENDENCY\_ERROR)\\
+    $\rightarrow$ ErrorClassifier $\rightarrow$ LLMExplainer
+    $\rightarrow$ RAGRepairAgent $\rightarrow$ FixApplicator
+    $\rightarrow$ ResultLogger\\[2pt]
+    {\small sequenced by the Orchestrator; ResultLogger writes
+     \texttt{repair\_attempts} + RDF}%
+    \vspace{1.6cm}}}
+  \caption{Component architecture of the repair layer. The orchestrator
+           drives the five components left to right; the dashed feedback
+           path (two-round mode) is described in
+           Section~\ref{sec:orchestrator}.}
+  \label{fig:architecture-components}
+\end{figure}
+
+Each component is defined below by its responsibility and its input/output
+contract. Implementation is deferred to the Implementation chapter (i2--i7).
+
+\subsection{ErrorClassifier (FR1)}
+\label{subsec:errorclassifier}
+\textbf{Responsibility.} Decide whether a failure is an in-scope,
+pip-fixable dependency error and, if so, extract the failing module and
+its sub-type. It reuses the pipeline's existing \texttt{error\_category}
+tag as a first filter and refines from \texttt{error\_type} and
+\texttt{error\_message}.\\
+\textbf{Input.} A \texttt{notebook\_executions} row (the fields listed in
+Section~\ref{sec:integration-point}).\\
+\textbf{Output.} Either a skip signal, or a classification
+$\{\texttt{failing\_module},\ \texttt{subtype}\}$ where
+$\texttt{subtype} \in \{\texttt{missing\_package},\ \texttt{wrong\_version}\}$.
+
+\subsection{LLMExplainer (O1)}
+\label{subsec:llmexplainer}
+\textbf{Responsibility.} Generate a plain-language explanation of the
+error for a non-expert reader (NFR2).\\
+\textbf{Input.} The error context (error type, message, failing module,
+relevant cell).\\
+\textbf{Output.} An explanation string and the identifier of the model
+that produced it (\texttt{model\_used}), forwarded to the ResultLogger
+for logging in \texttt{repair\_attempts.llm\_model}.\\
+\emph{The prompt template and model are defined in the L4 chapter; this
+component's contract is fixed here, its prompt internals are not.}
+
+\subsection{RAGRepairAgent (O2)}
+\label{subsec:repairagent}
+\textbf{Responsibility.} Derive a concrete fix for the classified error.
+Following PLLM~\cite{bartlett2025pllm},
+the suggestion is grounded in live PyPI metadata so that version numbers
+are retrieved rather than hallucinated.\\
+\textbf{Input.} The classified record (error context, \texttt{failing\_module}),
+the repository's requirements and import statements, the injected
+model/prompt configuration, and -- in two-round mode -- the prior failed
+attempt's new error as optional context.\\
+\textbf{Output.} A \emph{fix object} (Section~\ref{subsec:fix-object}).\\
+\emph{How PyPI is queried -- endpoints, fields consumed, import-name vs.
+install-name resolution, and version selection -- is specified in the L5
+chapter. This chapter fixes only the output contract (the fix object).}
+
+\subsection{FixApplicator (O3)}
+\label{subsec:fixapplicator}
+\textbf{Responsibility.} Apply the fix object's command inside the
+repository's Docker container and re-execute the notebook to validate it.
+The notebook is re-run \emph{top to bottom}, not from the failing cell,
+because notebook statefulness means a partial re-run cannot establish that
+the fix is correct~\cite{grotov2024debug}.\\
+\textbf{Input.} A fix object and a handle to the originating container.\\
+\textbf{Output.} An outcome
+$\in \{\texttt{fixed},\ \texttt{still\_failing},\ \texttt{apply\_error}\}$,
+together with the new error type/message if the notebook still fails.
+
+\subsection{ResultLogger (O4, O6)}
+\label{subsec:resultlogger}
+\textbf{Responsibility.} Persist the complete attempt and enrich the
+knowledge graph.\\
+\textbf{Input.} The classification, explanation, fix object, outcome, and
+run metadata.\\
+\textbf{Output.} One \texttt{repair\_attempts} row
+(Section~\ref{subsec:repair-table}) and, via the RML mapping, the
+corresponding RDF triples (Section~\ref{subsec:kg}). The benchmark
+dataset (O4) and the KG enrichment (O6) are both produced from this
+single component.
+
+% ---------------------------------------------------------------------
+\section{Orchestration and Control Flow}
+\label{sec:orchestrator}
+
+The orchestrator iterates over the target rows and runs the components in
+order: classify, explain, repair, apply, log. Three properties are fixed
+at this level.
+
+\paragraph{Round switch (ablation~e3).}
+The default is a single repair round. In two-round mode, if the outcome is
+\texttt{still\_failing}, the new error is fed back to the RAGRepairAgent
+once more and the resulting fix is re-applied before the attempt is
+logged. This feedback structure follows the re-execution-driven repair of
+ChatRepair~\cite{xia2024chatrepair};
+the one- versus two-round comparison is the subject of the ablation study.
+
+\paragraph{Failure isolation (NFR4).}
+Every attempt is logged, even when a component itself errors -- malformed
+LLM output, an unreachable PyPI, or a re-execution timeout. Such cases are
+caught and recorded with the appropriate \texttt{outcome}; a single
+problematic notebook never aborts the batch.
+
+\paragraph{Configuration surface (NFR5).}
+The model, the prompt strategy, and the round count are injected per run
+rather than hard-coded, so they can be swapped without changing component
+code. The same injection points drive the model and prompt comparisons in
+the evaluation.
+
+\begin{verbatim}
+for row in notebook_executions where error_category = 'DEPENDENCY_ERROR':
+    cls = ErrorClassifier(row)
+    if not cls.is_dependency_error:
+        continue
+    explanation = LLMExplainer(row, cls)            # O1
+    fix         = RAGRepairAgent(row, cls)          # O2  (PyPI-grounded)
+    outcome     = FixApplicator(fix, container)     # O3  (re-run top-to-bottom)
+    log(row, cls, explanation, fix, outcome, round=1)
+
+    if two_round and outcome == 'still_failing':    # ablation e3
+        fix2     = RAGRepairAgent(row, cls, prev_error=outcome.new_error)
+        outcome2 = FixApplicator(fix2, container)
+        log(row, cls, explanation, fix2, outcome2, round=2)
+\end{verbatim}
+% LISTING: switch the block above to lstlisting/algorithm if available.
+
+% ---------------------------------------------------------------------
+\section{Data Contracts}
+\label{sec:data-contracts}
+
+\subsection{Fix Object}
+\label{subsec:fix-object}
+
+The RAGRepairAgent emits the \emph{proposed} fix as structured JSON,
+before application. Version~1 is pip-only: \texttt{action} is one of
+\texttt{install}, \texttt{pin\_version}, or \texttt{none}; \texttt{version}
+is \texttt{null} for a plain install; and \texttt{command} is exactly what
+the FixApplicator runs inside the container. Notebook-code edits
+(\texttt{replace\_import}) are deferred to future work -- in practice many
+renamed-import cases are still resolved by pinning an older version where
+the import was valid, which remains a pip fix.
+
+\begin{verbatim}
+{
+  "action": "pin_version",
+  "import_name": "scanpy",
+  "install_name": "scanpy",
+  "version": "1.9.3",
+  "command": "pip install scanpy==1.9.3",
+  "rationale": "Notebook needs an API present only up to 1.9.x; pinning the
+                last compatible release.",
+  "pypi_evidence": {
+    "latest_version": "1.10.1",
+    "chosen_version": "1.9.3",
+    "requires_python": ">=3.9"
+  }
+}
+\end{verbatim}
+% LISTING: JSON
+
+\subsection{The \texttt{repair\_attempts} Table}
+\label{subsec:repair-table}
+
+The repair layer writes to a single new SQLite table,
+\texttt{repair\_attempts}, which serves a dual purpose: it is the live
+validation log (O3) and the reusable benchmark dataset (O4). It records
+\emph{one row per attempt}: a two-round repair produces two rows, and
+re-running the same targets under a different model or prompt produces
+further rows. The error data is never copied -- each row joins back to the
+originating failure via \texttt{notebook\_execution\_id}. Filtering on
+\texttt{round}, \texttt{llm\_model}, \texttt{prompt\_strategy}, and
+\texttt{run\_id} is what powers the ablation and the model/prompt
+comparisons.
+
+\begin{verbatim}
+CREATE TABLE repair_attempts (
+  id                      INTEGER PRIMARY KEY,
+  notebook_execution_id   INTEGER NOT NULL,   -- FK -> notebook_executions.id
+
+  -- from ErrorClassifier
+  failing_module          TEXT,               -- e.g. "scanpy"
+  subtype                 TEXT,               -- missing_package | wrong_version
+
+  -- from LLMExplainer (O1)
+  explanation             TEXT,
+
+  -- from RAGRepairAgent -- the proposed fix (O2)
+  action                  TEXT,               -- install | pin_version | none
+  install_name            TEXT,               -- resolved PyPI name
+  version                 TEXT,               -- version to pin, or NULL
+  command                 TEXT,               -- exact command run
+  rationale               TEXT,
+  pypi_evidence           TEXT,               -- JSON: versions seen, requires_python
+
+  -- from FixApplicator -- the outcome (O3)
+  outcome                 TEXT,               -- fixed | still_failing | apply_error
+  new_error_type          TEXT,
+  new_error_message       TEXT,
+
+  -- run metadata (for experiments)
+  llm_model               TEXT,
+  prompt_strategy         TEXT,               -- for the L4 prompt comparison
+  round                   INTEGER,            -- 1 or 2 (the ablation)
+  run_id                  TEXT,               -- groups one run / config
+  created_at              TEXT,
+
+  FOREIGN KEY (notebook_execution_id) REFERENCES notebook_executions(id)
+);
+\end{verbatim}
+% LISTING: SQL
+
+\subsection{Knowledge-Graph Enrichment}
+\label{subsec:kg}
+
+The FAIR Jupyter knowledge graph~\cite{samuel2024fairkg}
+is not written by hand; it is generated from per-table RML mappings
+(\texttt{*.rml.ttl}) run by the existing build script
+(\texttt{run\_fairjupyter\_kg.sh}). Objective~O6 therefore adds a single
+mapping, \texttt{repair\_attempts.rml.ttl}, modelled on the existing
+\texttt{mapping/rml\_mapping/executions.rml.ttl}. It re-expresses each
+\texttt{repair\_attempts} row as triples and attaches them to the notebook
+node already present in the graph, so that repair history becomes
+queryable alongside the existing reproducibility data.
+
+The vocabulary strategy follows the L2 notes: \emph{reuse} existing
+\texttt{repr:} terms where they already fit (e.g.\ \texttt{repr:exception}),
+\emph{add} new \texttt{repr:} terms for repair-specific facts, and use
+PROV-O~\cite{provenance2013}
+for the activity/agent/time layer, representing each repair as a
+\texttt{prov:Activity}. This serialisation of repair provenance directly
+serves the Reusable principle of FAIR~\cite{wilkinson2016fair} and the
+execution-environment provenance emphasised by
+FAIR4RS~\cite{barker2022fair4rs}.
+The base IRI is \texttt{repr:}~$=$~\url{https://w3id.org/reproduceme/} and
+the serialisation is Turtle (\texttt{.ttl}).
+% TODO: confirm the exact base IRI and reused predicate names against the
+% mappings in fusion-jena/fairjupyter before finalising.
+
+\begin{verbatim}
+repr:notebook_512  repr:hadRepairAttempt  repr:repairattempt_001 .
+
+repr:repairattempt_001
+    a                       prov:Activity, repr:RepairAttempt ;
+    repr:exception          "ModuleNotFoundError" ;   # reuse existing term
+    repr:failingModule      "scanpy" ;                # new term
+    repr:appliedFix         "pip install scanpy==1.9.3" ;
+    repr:fixOutcome         "fixed" ;
+    prov:wasAssociatedWith  repr:codellama_13b ;       # which model did it
+    prov:endedAtTime        "2026-07-15T14:22:00Z"^^xsd:dateTime .
+\end{verbatim}
+% LISTING: Turtle. NOTE: the model name above is illustrative; the actual
+% model is fixed in L4.
+
+% ---------------------------------------------------------------------
+\section{Scope and Forward References}
+\label{sec:arch-scope}
+
+This chapter fixes the component contracts, the orchestration logic, and
+the three data contracts (fix object, \texttt{repair\_attempts} table, KG
+mapping). The following are intentionally deferred:
+
+\begin{itemize}
+  \item Prompt templates and open-model selection -- L4 chapter.
+  \item PyPI retrieval internals: endpoints, consumed fields, import-name
+        vs.\ install-name resolution, and version selection -- L5 chapter.
+  \item Component implementation and end-to-end integration -- Implementation
+        chapter (i2--i7).
+  \item The \texttt{repair\_attempts.rml.ttl} mapping and its merge into the
+        graph build -- implementation step~i6.
+\end{itemize}
