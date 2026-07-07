@@ -1,0 +1,42 @@
+{
+  "note": "Synthetic fixture, not a live PyPI query. Live PyPI data for sklearn/umap/pkg_resources/Bio/scipy in l5_pypi_poc_results.json did not happen to include any yanked, incompatible, or pre-release candidates, so this hand-built fixture (modelled on a real PyPI Simple API JSON response) exercises the section 7.1 filtering rules directly.",
+  "distribution_name": "examplepkg",
+  "python_version": "3.13",
+  "input_files": [
+    { "version": "3.0.0", "requires_python": ">=3.8", "yanked": false },
+    { "version": "2.5.0", "requires_python": ">=3.8", "yanked": "security vulnerability" },
+    { "version": "2.0.0", "requires_python": "<3.7", "yanked": false },
+    { "version": "1.9.0b1", "requires_python": ">=3.6", "yanked": false },
+    { "version": "1.8.0", "requires_python": null, "yanked": false },
+    { "version": "1.7.0", "requires_python": ">=3.8", "yanked": false }
+  ],
+  "candidate_versions": [
+    {
+      "version": "3.0.0",
+      "requires_python": ">=3.8",
+      "python_compatibility": "compatible",
+      "yanked": false,
+      "yanked_reason": null
+    },
+    {
+      "version": "1.8.0",
+      "requires_python": null,
+      "python_compatibility": "unknown",
+      "yanked": false,
+      "yanked_reason": null
+    },
+    {
+      "version": "1.7.0",
+      "requires_python": ">=3.8",
+      "python_compatibility": "compatible",
+      "yanked": false,
+      "yanked_reason": null
+    }
+  ],
+  "excluded_versions": [
+    { "version": "2.5.0", "reason": "yanked" },
+    { "version": "2.0.0", "reason": "incompatible requires-python (needs <3.7, notebook is 3.13)" },
+    { "version": "1.9.0b1", "reason": "pre-release" }
+  ],
+  "retrieved_at": "2026-07-07T21:56:13.451109+00:00"
+}

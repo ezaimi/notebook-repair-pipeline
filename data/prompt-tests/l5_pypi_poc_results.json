@@ -1,0 +1,254 @@
+[
+  {
+    "status": "resolved",
+    "import_name": "sklearn",
+    "distribution_name": "scikit-learn",
+    "package_found": true,
+    "python_version": "3.13",
+    "latest_version": "1.9.0",
+    "candidate_versions": [
+      {
+        "version": "1.9.0",
+        "requires_python": ">=3.11",
+        "python_compatibility": "compatible",
+        "yanked": false,
+        "yanked_reason": null
+      },
+      {
+        "version": "1.8.0",
+        "requires_python": ">=3.11",
+        "python_compatibility": "compatible",
+        "yanked": false,
+        "yanked_reason": null
+      },
+      {
+        "version": "1.7.2",
+        "requires_python": ">=3.10",
+        "python_compatibility": "compatible",
+        "yanked": false,
+        "yanked_reason": null
+      },
+      {
+        "version": "1.7.1",
+        "requires_python": ">=3.10",
+        "python_compatibility": "compatible",
+        "yanked": false,
+        "yanked_reason": null
+      },
+      {
+        "version": "1.7.0",
+        "requires_python": ">=3.10",
+        "python_compatibility": "compatible",
+        "yanked": false,
+        "yanked_reason": null
+      }
+    ],
+    "source_endpoint": "https://pypi.org/simple/scikit-learn/",
+    "retrieved_at": "2026-07-07T21:41:51.161466+00:00",
+    "error": null
+  },
+  {
+    "status": "resolved",
+    "import_name": "umap",
+    "distribution_name": "umap-learn",
+    "package_found": true,
+    "python_version": "3.13",
+    "latest_version": "0.5.12",
+    "candidate_versions": [
+      {
+        "version": "0.5.12",
+        "requires_python": ">=3.9",
+        "python_compatibility": "compatible",
+        "yanked": false,
+        "yanked_reason": null
+      },
+      {
+        "version": "0.5.11",
+        "requires_python": ">=3.9",
+        "python_compatibility": "compatible",
+        "yanked": false,
+        "yanked_reason": null
+      },
+      {
+        "version": "0.5.9.post2",
+        "requires_python": ">=3.9",
+        "python_compatibility": "compatible",
+        "yanked": false,
+        "yanked_reason": null
+      },
+      {
+        "version": "0.5.8",
+        "requires_python": null,
+        "python_compatibility": "unknown",
+        "yanked": false,
+        "yanked_reason": null
+      },
+      {
+        "version": "0.5.7",
+        "requires_python": null,
+        "python_compatibility": "unknown",
+        "yanked": false,
+        "yanked_reason": null
+      }
+    ],
+    "source_endpoint": "https://pypi.org/simple/umap-learn/",
+    "retrieved_at": "2026-07-07T21:41:51.392736+00:00",
+    "error": null
+  },
+  {
+    "status": "resolved",
+    "import_name": "pkg_resources",
+    "distribution_name": "setuptools",
+    "package_found": true,
+    "python_version": "3.13",
+    "latest_version": "83.0.0",
+    "candidate_versions": [
+      {
+        "version": "83.0.0",
+        "requires_python": ">=3.10",
+        "python_compatibility": "compatible",
+        "yanked": false,
+        "yanked_reason": null
+      },
+      {
+        "version": "82.0.1",
+        "requires_python": ">=3.9",
+        "python_compatibility": "compatible",
+        "yanked": false,
+        "yanked_reason": null
+      },
+      {
+        "version": "82.0.0",
+        "requires_python": ">=3.9",
+        "python_compatibility": "compatible",
+        "yanked": false,
+        "yanked_reason": null
+      },
+      {
+        "version": "81.0.0",
+        "requires_python": ">=3.9",
+        "python_compatibility": "compatible",
+        "yanked": false,
+        "yanked_reason": null
+      },
+      {
+        "version": "80.10.2",
+        "requires_python": ">=3.9",
+        "python_compatibility": "compatible",
+        "yanked": false,
+        "yanked_reason": null
+      }
+    ],
+    "source_endpoint": "https://pypi.org/simple/setuptools/",
+    "retrieved_at": "2026-07-07T21:54:41.033463+00:00",
+    "error": null
+  },
+  {
+    "status": "resolved",
+    "import_name": "Bio",
+    "distribution_name": "biopython",
+    "package_found": true,
+    "python_version": "3.13",
+    "latest_version": "1.87",
+    "candidate_versions": [
+      {
+        "version": "1.87",
+        "requires_python": ">=3.10",
+        "python_compatibility": "compatible",
+        "yanked": false,
+        "yanked_reason": null
+      },
+      {
+        "version": "1.86",
+        "requires_python": ">=3.10",
+        "python_compatibility": "compatible",
+        "yanked": false,
+        "yanked_reason": null
+      },
+      {
+        "version": "1.85",
+        "requires_python": ">=3.9",
+        "python_compatibility": "compatible",
+        "yanked": false,
+        "yanked_reason": null
+      },
+      {
+        "version": "1.84",
+        "requires_python": ">=3.9",
+        "python_compatibility": "compatible",
+        "yanked": false,
+        "yanked_reason": null
+      },
+      {
+        "version": "1.83",
+        "requires_python": ">=3.8",
+        "python_compatibility": "compatible",
+        "yanked": false,
+        "yanked_reason": null
+      }
+    ],
+    "source_endpoint": "https://pypi.org/simple/biopython/",
+    "retrieved_at": "2026-07-07T21:41:51.997581+00:00",
+    "error": null
+  },
+  {
+    "status": "resolved",
+    "import_name": "scipy",
+    "distribution_name": "scipy",
+    "package_found": true,
+    "python_version": "3.13",
+    "latest_version": "1.18.0",
+    "candidate_versions": [
+      {
+        "version": "1.18.0",
+        "requires_python": ">=3.12",
+        "python_compatibility": "compatible",
+        "yanked": false,
+        "yanked_reason": null
+      },
+      {
+        "version": "1.17.1",
+        "requires_python": ">=3.11",
+        "python_compatibility": "compatible",
+        "yanked": false,
+        "yanked_reason": null
+      },
+      {
+        "version": "1.17.0",
+        "requires_python": ">=3.11",
+        "python_compatibility": "compatible",
+        "yanked": false,
+        "yanked_reason": null
+      },
+      {
+        "version": "1.16.3",
+        "requires_python": ">=3.11",
+        "python_compatibility": "compatible",
+        "yanked": false,
+        "yanked_reason": null
+      },
+      {
+        "version": "1.16.2",
+        "requires_python": ">=3.11",
+        "python_compatibility": "compatible",
+        "yanked": false,
+        "yanked_reason": null
+      }
+    ],
+    "source_endpoint": "https://pypi.org/simple/scipy/",
+    "retrieved_at": "2026-07-07T21:41:52.751777+00:00",
+    "error": null
+  },
+  {
+    "status": "mapping_unknown",
+    "import_name": "dms_variants",
+    "distribution_name": null,
+    "package_found": null,
+    "python_version": "3.13",
+    "latest_version": null,
+    "candidate_versions": [],
+    "source_endpoint": null,
+    "retrieved_at": null,
+    "error": null
+  }
+]
