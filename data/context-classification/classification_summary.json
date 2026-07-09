@@ -1,0 +1,42 @@
+{
+  "created_at": "2026-07-09T08:30:59.826894+00:00",
+  "fetch_remote_enabled": false,
+  "total_rows": 214,
+  "subtype_counts_before_refinement": {
+    "missing_package": 179,
+    "system_library": 10,
+    "wrong_version": 21,
+    "mapping_unknown": 4
+  },
+  "subtype_counts_after_refinement": {
+    "missing_package": 179,
+    "system_library": 10,
+    "wrong_version": 21,
+    "mapping_unknown": 4
+  },
+  "confidence_distribution": {
+    "high": 202,
+    "medium": 8,
+    "low": 4
+  },
+  "root_cause_hint_counts": {
+    "import_distribution_name_mismatch": 23,
+    "direct_missing_package": 156,
+    "system_level_dependency": 10,
+    "version_or_api_incompatibility": 21,
+    "local_import_or_path_issue": 4
+  },
+  "context_status_counts": {
+    "metadata_only": 188,
+    "legacy_execution_hint": 26
+  },
+  "rows_with_legacy_hint": 26,
+  "rows_with_rejected_legacy_hint": 39,
+  "rows_with_remote_fetched_context": 0,
+  "rows_with_metadata_only_context": 188,
+  "dependency_file_metadata_counts": {
+    "attempted": 0,
+    "fetched": 0
+  },
+  "validation_sample_size": 29
+}
