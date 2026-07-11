@@ -17,3 +17,5 @@ delete_issues_from_l3.py
 thesis/TU_Chemnitz_positiv_gruen.pdf
 
 .claude/*:Zone.Identifier
+__pycache__/
+*.pyc
