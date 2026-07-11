@@ -1,0 +1,114 @@
+You are explaining a dependency-related Jupyter notebook execution failure.
+
+Your task:
+- Explain the error clearly and briefly.
+- Use only the information provided in the input record.
+- Do not suggest fixes.
+- Do not apply fixes.
+- Do not include pip commands, install commands, or repair instructions.
+- If the original error message contains an install command, paraphrase the dependency problem without copying the command.
+- Return only valid JSON.
+- Do not wrap the JSON in markdown.
+
+Output rules:
+- Return exactly these fields:
+  summary
+  root_cause
+  evidence
+  failing_module
+  explanation_confidence
+  limitations
+
+- "failing_module" must copy the input failing_module value.
+- If the input failing_module is "Not available", missing, empty, or ambiguous, return null.
+- "evidence" must only contain facts grounded in the input error message, traceback hint, failing cell, import cells, surrounding cells, or dependency files.
+- Evidence may mention that the error message requires a package, but must not quote install commands.
+- Treat "Not available" as missing information, not as evidence.
+- If there is not enough concrete evidence, use [].
+- "limitations" must always explain what is missing or uncertain.
+- "explanation_confidence" must be one of: high, medium, low.
+- Use refined_subtype as the main classification label.
+- Use classifier_confidence and root_cause_hint only as supporting context, not as proof.
+- root_cause_hint is a short classifier label, not a sentence. Do not invent new root_cause_hint values.
+
+Known root_cause_hint values:
+- direct_missing_package
+- import_distribution_name_mismatch
+- version_or_api_incompatibility
+- transitive_dependency
+- system_level_dependency
+- local_import_or_path_issue
+- insufficient_context
+
+Example 1:
+Input:
+error_type: ModuleNotFoundError
+error_message: No module named 'sklearn'
+original_subtype: missing_package
+refined_subtype: missing_package
+classifier_confidence: high
+root_cause_hint: import_distribution_name_mismatch
+failing_module: sklearn
+context_status: metadata_only
+
+Output:
+{
+  "summary": "The notebook failed because Python could not find the module 'sklearn'.",
+  "root_cause": "The notebook imports 'sklearn', which is not available in the execution environment. The classifier also marks this as an import/distribution-name mismatch, meaning the import name may not directly match the package distribution name.",
+  "evidence": ["The error type is ModuleNotFoundError.", "The error message says: No module named 'sklearn'.", "The root_cause_hint is import_distribution_name_mismatch."],
+  "failing_module": "sklearn",
+  "explanation_confidence": "high",
+  "limitations": "Only metadata is available, so the exact failing cell and dependency files cannot be inspected."
+}
+
+Example 2:
+Input:
+error_type: ImportError
+error_message: cannot import name 'cumtrapz' from 'scipy.integrate'
+original_subtype: wrong_version
+refined_subtype: wrong_version
+classifier_confidence: high
+root_cause_hint: version_or_api_incompatibility
+failing_module: scipy
+context_status: metadata_only
+
+Output:
+{
+  "summary": "The notebook failed because it tried to import 'cumtrapz' from 'scipy.integrate', but that name was not available.",
+  "root_cause": "This is likely caused by a package API or version incompatibility, where the notebook expects a function that is not present in the installed SciPy package version.",
+  "evidence": ["The error type is ImportError.", "The error message says that 'cumtrapz' could not be imported from 'scipy.integrate'.", "The root_cause_hint is version_or_api_incompatibility."],
+  "failing_module": "scipy",
+  "explanation_confidence": "medium",
+  "limitations": "The installed SciPy version and full notebook context are not available, so the exact compatibility mismatch cannot be verified."
+}
+
+Now explain this input record.
+
+Input record:
+notebook_execution_id: {{notebook_execution_id}}
+error_type: {{error_type}}
+error_message: {{error_message}}
+original_subtype: {{original_subtype}}
+refined_subtype: {{refined_subtype}}
+classifier_confidence: {{classifier_confidence}}
+root_cause_hint: {{root_cause_hint}}
+failing_module: {{failing_module}}
+context_status: {{context_status}}
+error_cell_index: {{error_cell_index}}
+
+failing_cell_source:
+{{failing_cell_source}}
+
+import_cells:
+{{import_cells}}
+
+surrounding_cells:
+{{surrounding_cells}}
+
+dependency_files:
+{{dependency_files}}
+
+legacy_traceback_hint:
+{{legacy_traceback_hint}}
+
+Return only JSON:

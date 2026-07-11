@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LLM Dependency Error Explanation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "summary",
+    "root_cause",
+    "evidence",
+    "failing_module",
+    "explanation_confidence",
+    "limitations"
+  ],
+  "properties": {
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "root_cause": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "failing_module": {
+      "type": ["string", "null"]
+    },
+    "explanation_confidence": {
+      "type": "string",
+      "enum": ["high", "medium", "low"]
+    },
+    "limitations": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

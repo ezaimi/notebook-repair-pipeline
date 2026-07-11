@@ -1,0 +1,28 @@
+runtime: ollama
+
+models:
+  primary: gemma2:9b
+  fallback: null
+
+generation:
+  temperature: 0.1
+  top_p: 0.9
+  max_tokens: 700
+  timeout_seconds: 120
+
+retry:
+  max_retries: 1
+  retry_on:
+    - invalid_json
+    - schema_validation_error
+    - timeout
+    - model_unavailable
+
+prompt:
+  strategy: few_shot
+  template: dependency_explanation_v1
+  version: i3_prompt_v1
+
+output:
+  path: data/llm-explanations/explanation_results.jsonl
+  schema: schemas/explanation.schema.json

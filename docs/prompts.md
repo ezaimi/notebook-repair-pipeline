@@ -343,6 +343,33 @@ It keeps `LLMExplainer` separate from `RAGRepairAgent`, consistent with the comp
 
 The template is config-injected through named slots, supporting NFR5.
 
+### i3 Deviation: Structured JSON Output Instead of Prose
+
+L4's zero-shot template above was designed for **plain-prose output**: "Write 2–4 short sentences. Do not use headings, bullet points, or JSON." That framing predates the i2 context-extraction output and the i3 implementation work.
+
+The i3 implementation (`prompts/dependency_explanation_v1.txt`) deviates from this and requires `LLMExplainer` to return **schema-valid JSON** instead, validated against `schemas/explanation.schema.json`:
+
+```json
+{
+  "summary": "...",
+  "root_cause": "...",
+  "evidence": ["..."],
+  "failing_module": "... or null",
+  "explanation_confidence": "high | medium | low",
+  "limitations": "..."
+}
+```
+
+Reasons for the deviation:
+
+- i3's acceptance criteria require the explainer to "produce schema-valid JSON explanations" and log structured results to `data/llm-explanations/explanation_results.jsonl`, which needs machine-readable output rather than free text.
+- L4's own JSON validity strategy (§9) already established a validated pattern - schema-constrained output, local parsing/validation, retry-on-failure - for the repair prompt. i3 extends that same pattern to the explainer instead of introducing a second, inconsistent output-handling approach.
+- The explainer's "no repair suggestion" boundary from L4 is preserved under JSON just as it was under prose: the schema has no `fix`/`command`/`version` field, and `additionalProperties: false` prevents one from being smuggled in.
+
+The output field `explanation_confidence` is deliberately named to avoid colliding with i2's own `confidence` field (the classifier's confidence in the subtype/root-cause hint, computed in i2 and passed into the prompt as `classifier_confidence`). The two are conceptually different - one is the upstream classifier's confidence, the other is the LLM's self-assessed confidence in its own explanation - and are expected to diverge (e.g. high classifier confidence in a pattern match, but only medium explanation confidence when the exact root cause can't be fully verified from the available context).
+
+This is a design deviation from L4, not a correction of it: L4's prose-only design remains valid documentation of the original prompt-design intent; i3 supersedes it for the actual implementation.
+
 ## 8. Repair Prompt
 
 ### Purpose
@@ -698,3 +725,62 @@ During testing, additional safety rules were added to prevent unsupported packag
 `few_shot` is selected provisionally as the default prompt strategy because the tested few-shot prompts followed the required output format, produced a clear explanation, and handled safe abstention correctly. This design-time check does not establish that few-shot prompting produces higher repair success than zero-shot prompting. `zero_shot` remains available as the baseline strategy.
 
 This was a design-time sanity check only. It does not measure repair success after notebook execution. Runtime repair evaluation will be performed later through the FixApplicator and pipeline reruns.
+## I3 implementation update: LLMExplainer prompt execution
+
+The i3 implementation changes the LLMExplainer from the original L4 plain-text explanation format to schema-valid JSON output. This is necessary because explanations must be automatically validated, retried on malformed output, logged consistently, and evaluated later.
+
+Final i3 output schema:
+
+- `summary`
+- `root_cause`
+- `evidence`
+- `failing_module`
+- `explanation_confidence`
+- `limitations`
+
+The schema is defined in:
+
+`schemas/explanation.schema.json`
+
+The prompt template is:
+
+`prompts/dependency_explanation_v1.txt`
+
+The runtime configuration is:
+
+`config/llm_explainer.yaml`
+
+### Runtime and retry behavior
+
+The i3 runner uses Ollama with `gemma2:9b` as the local explanation model. The runner supports config-gated retry behavior for:
+
+- invalid JSON
+- schema validation errors
+- timeout
+- model unavailable
+
+The retry policy is controlled by `retry.max_retries` and `retry.retry_on` in `config/llm_explainer.yaml`.
+
+### Fallback-model decision
+
+For i3, the LLMExplainer does not switch to a different fallback model. This follows the L4 component decision that the explainer uses Gemma-2 9B. Fallback-model switching is deferred to the later repair component, where CodeLlama or DeepSeek-Coder may be useful for repair-command generation.
+
+Therefore, `models.fallback: null` is intentional for `LLMExplainer`.
+
+### Logged result structure
+
+Explanation results are written as JSONL to:
+
+`data/llm-explanations/explanation_results.jsonl`
+
+Each row uses the nested structure:
+
+- `input`: original i2 metadata and classification fields
+- `llm`: model and prompt metadata
+- `explanation_result`: generated explanation, validation status, latency, token counts, retry attempts, and errors
+
+This separation prevents raw input metadata, such as original error messages, from being confused with generated explanation content.
+
+### Scope boundary
+
+The LLMExplainer only explains dependency-related failures. It does not generate, apply, or validate fixes. Repair generation remains assigned to the later RAGRepairAgent/FixApplicator components.
