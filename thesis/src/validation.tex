@@ -11,13 +11,15 @@ result-logging and knowledge-graph components, the real Morph-KGC mapping
 engine and the FAIR Jupyter knowledge graph's own source data.
 
 % TODO-FULL-RUN: update after final orchestrated dataset execution
-\fullrunupdate{Each pilot exercises one component's own stages against its
-relevant real external system; no single unattended run has yet driven all
-components together over the dataset (\Cref{sec:orchestrator}). Neither kind
-of evidence is the thesis's final evaluation, which requires running the
-full 187-row evaluation split described in \Cref{chap:problem-dataset}, and
-that full evaluation run has not yet been performed
-(\Cref{chap:future-work}).}
+\fullrunupdate{The pilots reported through most of this chapter each
+exercise one component's own stages against its relevant real external
+system in isolation. \Cref{sec:v-i7} reports a further, later pilot that
+drives several components together, unattended, in one unattended run via
+the now-implemented orchestrator (\Cref{sec:orchestrator}) -- still over a
+small number of records, not the full dataset. Neither kind of evidence is
+the thesis's final evaluation, which requires running the full 187-row
+evaluation split described in \Cref{chap:problem-dataset}, and that full
+evaluation run has not yet been performed (\Cref{chap:future-work}).}
 
 \section{Automated Testing}
 \label{sec:v-testing}
@@ -225,10 +227,15 @@ work" in every one of these cases.
 \fullrunupdate{No completely clean \texttt{fixed} outcome
 has yet been produced, despite a pilot deliberately designed to find one.
 This is stated plainly rather than minimised: a clean outcome remains
-achievable in principle on a single-dependency notebook, or with the future
-two-round repair mode feeding a \texttt{still\_failing} result's new error
-back into a second repair attempt (\Cref{chap:future-work}), but neither has
-been demonstrated yet.}
+achievable in principle on a single-dependency notebook. The two-round
+repair mode that would feed a \texttt{still\_failing} result's new error
+back into a second repair attempt has since been built and demonstrated for
+real on exactly cases 1 and 2 above (\Cref{sec:v-i7}); in both real
+attempts the second round correctly triggered and correctly abstained
+rather than proposing anything ungrounded -- it has not yet produced a
+second \emph{successful} repair on real data, only a correctly-handled
+abstention. \Cref{chap:future-work} discusses what a full-scale run would
+still need to show one.}
 
 \section{Result Logging and Knowledge-Graph Implementation Validation}
 \label{sec:v-i6}
@@ -307,6 +314,70 @@ assembled for this purpose, not a run over the complete dataset.
 \Cref{chap:future-work} states what a full-scale population of the
 knowledge graph from this mapping still requires.}
 
+\section{Orchestrator Implementation Validation}
+\label{sec:v-i7}
+
+A further pilot ran the orchestrator itself
+(\texttt{scripts/run\_pipeline.py}, \Cref{sec:orchestrator}) end to end --
+classification through result logging, including the bounded two-round
+repair loop -- against real Ollama, real PyPI, and a real Docker daemon,
+never mocked, for two development-split records. Both reproduce, and
+extend with a real Round 2 attempt, the cases already reported in
+\Cref{sec:v-i5}.
+
+\begin{table}[h]
+  \centering
+  \small
+  \begin{tabular}{|p{1.3cm}|p{3.3cm}|p{3.3cm}|p{6.0cm}|}
+    \hline
+    \textbf{Case} & \textbf{Round 1} & \textbf{Round 2 trigger} & \textbf{Round 2 result} \\
+    \hline
+    A -- \texttt{sklearn} (id 8) &
+      install \texttt{scikit-learn}; \texttt{still\_failing} on \texttt{No module named 'pandas'} &
+      Fired: \texttt{pandas} reclassifies as \texttt{missing\_package}/usable &
+      RAGRepairAgent called for real against \texttt{pandas}, abstained after two invalid-JSON
+      responses -- the model hallucinated JSON echoing PyPI's own
+      "unparseable filename" warnings for \texttt{pandas}'s many legacy Windows release
+      artifacts, embedded in the prompt's evidence block. A genuine, unforced model
+      failure mode; FixApplicator never reached Docker. \\
+    \hline
+    B -- \texttt{scipy}/cumtrapz (id 174) &
+      pin \texttt{scipy==1.13.1}; \texttt{still\_failing} on \texttt{No module named 'tf\_keras'} &
+      Fired: \texttt{tf\_keras} reclassifies as \texttt{missing\_package}/usable &
+      RAGRepairAgent called for real against \texttt{tf\_keras}, abstained: PyPI retrieval
+      returned \texttt{mapping\_unknown} because \texttt{tf\_keras} has no entry in
+      \texttt{config/package\_mapping.yaml}. Confirms, rather than assumes, that this
+      documented case cannot currently be repaired end to end; no mapping entry was added to
+      force a different outcome. FixApplicator never reached Docker. \\
+    \hline
+  \end{tabular}
+  \caption{Real orchestrator pilot: both cases exercise a genuine Round 2 trigger and a genuine,
+  differently-caused RAGRepairAgent abstention, never a fabricated success.}
+  \label{tab:v-i7-cases}
+\end{table}
+
+Round 1 of both cases reproduced the FixApplicator-only pilot results in
+\Cref{tab:v-i5-cases} exactly, now driven by the orchestrator rather than
+by hand, and with both rows carrying one shared \texttt{run\_id} across
+both rounds -- confirmed directly in the resulting SQLite rows, not merely
+assumed from the code. Each round produced its own, separate
+\texttt{repair\_attempts} row (\Cref{sec:m-resultlogger}), never collapsed
+into one.
+
+% TODO-FULL-RUN: update once a real Round 2 attempt succeeds and after full orchestrated dataset execution
+\fullrunupdate{Neither real Round 2 attempt produced a successful second
+repair -- both triggered correctly and abstained correctly, for two
+different, genuine reasons, rather than either being forced to succeed.
+A real case demonstrating a full two-round \emph{success} has not yet been
+found; \Cref{chap:future-work} discusses what a full-scale run over the
+evaluation split would still need to show one. The controlled, mocked test
+suite (\Cref{chap:methodology}) separately proves the second-round
+mechanism itself -- trigger conditions, the cumulative environment, the
+shared run identifier, and the two-round cap -- works correctly end to end
+when RAGRepairAgent does propose and FixApplicator does apply a Round 2
+fix; only a real Round 2 \emph{success} on real dataset data remains
+unobserved.}
+
 \section{Summary: Implementation Validation, Not Final Evaluation}
 \label{sec:v-summary}
 
@@ -324,10 +395,11 @@ mappings, three environment-specific bugs) that only a real pilot could have
 found.
 
 % TODO-FULL-RUN: update after full orchestrated dataset execution
-\fullrunupdate{This is component-by-component pilot validation: no single
-unattended run has yet driven all components together over the dataset, and
-that remains the job of the orchestrator described in
-\Cref{chap:architecture,chap:future-work}.}
+\fullrunupdate{Most of this is component-by-component pilot validation;
+\Cref{sec:v-i7} additionally reports a small pilot run of the orchestrator
+described in \Cref{chap:architecture,chap:future-work}, which does now
+drive several components together, unattended, in one pass -- over a
+handful of records, not the full dataset.}
 
 % TODO-FULL-RUN: rewrite once the full 187-row evaluation and knowledge-graph population exist
 \fullrunupdate{What these results do \emph{not} show is an

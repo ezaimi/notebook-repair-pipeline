@@ -15,6 +15,7 @@ from pypi_retriever import load_rag_repair_config
 from rag_repair_agent import (
     build_argv,
     build_command_display,
+    build_retry_prompt,
     check_eligibility,
     extract_wrong_version_signature,
     run_repair_agent,
@@ -714,4 +715,145 @@ def test_one_result_dict_per_record_regardless_of_llm_attempts(monkeypatch, conf
 
     assert isinstance(result, dict)
     assert result["notebook_execution_id"] == 8
+
+
+# --- warning-noise regression (real pandas pilot failure) --------------------
+#
+# Real i7 pilot: Round 2 targeted "pandas", a distribution with hundreds of
+# legacy Windows .exe/.egg release artifacts pypi_retriever cannot parse as
+# a version. Each one produced a "Skipping unparseable PyPI filename"
+# warning, and the unbounded join of all of them into the repair prompt
+# left gemma2:9b echoing that noise back as a malformed JSON object instead
+# of proposing a fix. These tests exercise the real, unmocked
+# retrieve() -> render_repair_prompt() -> call_ollama() path with the same
+# precondition (hundreds of unparseable filenames) and assert the model is
+# never shown more than a small, bounded sample of them.
+
+def pandas_record():
+    record = sklearn_record()
+    record["failing_module"] = "pandas"
+    record["error_message"] = "No module named 'pandas'"
+    return record
+
+
+def mock_pypi_with_many_unparseable_files(monkeypatch, distribution, valid_version, unparseable_count):
+    unparseable_files = [
+        {"filename": f"{distribution}-0.{i}.0.win32-py2.7.exe", "yanked": False} for i in range(unparseable_count)
+    ]
+    valid_file = {
+        "filename": f"{distribution}-{valid_version}.tar.gz",
+        "yanked": False,
+        "requires-python": ">=3.9",
+    }
+
+    def fake_urlopen(request, timeout=None):
+        return FakeResponse(json.dumps({"files": unparseable_files + [valid_file]}).encode("utf-8"))
+
+    monkeypatch.setattr(pypi_retriever.urllib.request, "urlopen", fake_urlopen)
+
+
+def test_prompt_sent_to_llm_bounds_hundreds_of_pypi_warnings(monkeypatch, config):
+    mock_pypi_with_many_unparseable_files(monkeypatch, "pandas", "2.2.0", unparseable_count=250)
+
+    captured = {}
+
+    def fake_call_ollama(**kwargs):
+        captured["prompt"] = kwargs["prompt"]
+        return ollama_response("install", "pandas", None), {}
+
+    monkeypatch.setattr(rag_repair_agent, "call_ollama", fake_call_ollama)
+
+    result = run_repair_agent(pandas_record(), config)
+
+    # provenance: the full, unbounded warnings list survives in the result
+    assert len(result["retrieval_result"]["warnings"]) == 250
+
+    # the LLM-facing prompt does not: at most a small sample is embedded.
+    # Isolate just the real input record's "retrieval warnings:" line (the
+    # template's few-shot examples earlier in the prompt also contain the
+    # literal words "retrieval warnings:", so the *last* occurrence - the
+    # actual rendered input - is the one that matters here), since the rest
+    # of the prompt is fixed template/instruction text unrelated to this
+    # fix's scope.
+    prompt = captured["prompt"]
+    warnings_line = prompt.rsplit("retrieval warnings:", 1)[-1].split("retrieval limitations:")[0]
+    assert warnings_line.count("Skipping unparseable PyPI filename") <= 3
+    assert "250 warning" in warnings_line
+    assert "more omitted" in warnings_line
+    # the unbounded join of all 250 warnings alone would be ~14,000 characters
+    unbounded_warnings_length = sum(len(w) for w in result["retrieval_result"]["warnings"])
+    assert unbounded_warnings_length > 10000
+    assert len(warnings_line) < 1000
+
+    # and the proposal, once the model is not overwhelmed, actually validates
+    assert result["status"] == "success"
+    assert result["final_action"] == "install"
+    assert result["final_install_name"] == "pandas"
+
+
+def test_malformed_response_mirroring_the_real_pandas_failure_is_rejected(monkeypatch, config):
+    """The exact malformed shape observed in the real pilot (the model
+    echoing the warning structure back instead of a proposal) must still be
+    a clean, safe abstention - not something the noise-reduction fix
+    accidentally starts accepting."""
+    mock_pypi_with_many_unparseable_files(monkeypatch, "pandas", "2.2.0", unparseable_count=250)
+
+    bad_response = json.dumps(
+        {"error": "Skipping unparseable PyPI filename", "filenames": ["pandas-0.13.0.win32-py2.7.exe"]}
+    )
+    monkeypatch.setattr(rag_repair_agent, "call_ollama", lambda **kwargs: (bad_response, {}))
+
+    result = run_repair_agent(pandas_record(), config)
+
+    assert result["status"] == "abstained"
+    assert result["final_action"] == "none"
+    assert result["schema_validation"]["valid"] is False
+
+
+# --- retry-prompt robustness (Task 3/4 hardening) ----------------------------
+
+
+def test_retry_prompt_truncates_a_long_invalid_response():
+    long_response = "x" * 5000
+    retry_prompt = build_retry_prompt("ORIGINAL_PROMPT_MARKER", long_response, ["invalid_json: some error"])
+
+    assert "[truncated]" in retry_prompt
+    assert "ORIGINAL_PROMPT_MARKER" in retry_prompt  # the original prompt is still passed through in full
+    # the echoed previous response is bounded, not the full 5000 characters
+    assert retry_prompt.count("x") < 1000
+
+
+def test_retry_prompt_does_not_truncate_a_short_invalid_response():
+    retry_prompt = build_retry_prompt("orig", "short bad response", ["invalid_json: x"])
+    assert "short bad response" in retry_prompt
+    assert "[truncated]" not in retry_prompt
+
+
+def test_retry_prompt_instructs_exact_json_shape_only():
+    retry_prompt = build_retry_prompt("orig", "bad", ["invalid_json: x"])
+    assert "ONLY" in retry_prompt
+    assert '"action"' in retry_prompt
+    assert '"install_name"' in retry_prompt
+    assert '"version"' in retry_prompt
+    assert '"rationale"' in retry_prompt
+
+
+def test_retry_is_still_bounded_to_configured_max_retries(monkeypatch, config):
+    """Task 4 explicitly forbids an unlimited repair loop - confirm the
+    existing bounded retry count (config/rag_repair.yaml's max_retries: 1,
+    i.e. two total attempts) is unchanged by the retry-prompt wording fix."""
+    mock_pypi(monkeypatch, "scikit-learn", ["1.7.2"])
+    calls = {"count": 0}
+
+    def fake_call_ollama(**kwargs):
+        calls["count"] += 1
+        return "still not json", {}
+
+    monkeypatch.setattr(rag_repair_agent, "call_ollama", fake_call_ollama)
+
+    result = run_repair_agent(sklearn_record(), config)
+
+    assert calls["count"] == 2  # 1 initial attempt + 1 retry, never more
+    assert result["attempts"] == 2
+    assert result["status"] == "abstained"
     assert result["attempts"] == 2

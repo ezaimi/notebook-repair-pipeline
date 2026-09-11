@@ -176,26 +176,28 @@ dataset~\cite{grotov2024untangling} remains a named fallback.
     \draw[arr] (rl) -- (sql);
     \draw[arr] (rl) -- (kg);
 
-    % planned, not-yet-implemented feedback path (kept shallow so its label
-    % stays clear of the SQLite/KG output boxes further below)
+    % bounded second-round feedback path (implemented, i7 - see
+    % scripts/run_pipeline.py and sec:orchestrator)
     \draw[darr] (fa.south) .. controls +(0,-9mm) and +(0,-9mm) .. (ra.south)
-      node[midway, below, font=\scriptsize] {planned bounded second round (not yet implemented)};
+      node[midway, below, font=\scriptsize] {bounded second round (implemented, i7; max.\ two rounds)};
 
     % orchestrator: dashed enclosure around the five sequenced components only
     \node[draw, dashed, rounded corners, inner sep=5mm, fit=(ec)(le)(ra)(fa)(rl)] (orch) {};
     % caption placed above LLMExplainer's column, clear of the input and PyPI arrows
     \node[font=\scriptsize, anchor=south] at (le.north |- orch.north)
-      {Orchestrator (sequences the five components; design target, not yet built)};
+      {Orchestrator (sequences the five components; implemented, i7)};
   \end{tikzpicture}%
   }
   \caption{Component architecture of the repair layer. The Docker pipeline's
            residual dependency failures enter at the left; the five
            components are sequenced by the orchestrator (dashed enclosure),
-           which is a design target and not yet a built component
-           (\Cref{sec:orchestrator}); RAGRepairAgent queries PyPI for live
-           metadata; ResultLogger writes both the SQLite benchmark table and
-           the FAIR Jupyter knowledge graph. The dashed feedback arrow is the
-           planned bounded second round, also not yet implemented.}
+           implemented in \texttt{scripts/run\_pipeline.py} and validated by a
+           small real pilot (\Cref{sec:orchestrator}); RAGRepairAgent queries
+           PyPI for live metadata; ResultLogger writes both the SQLite
+           benchmark table and the FAIR Jupyter knowledge graph. The dashed
+           feedback arrow is the bounded second round, also implemented and
+           capped at two rounds total. The full 187-row evaluation run over
+           this pipeline remains future work (\Cref{chap:future-work}).}
   \label{fig:architecture-components}
 \end{figure}
 
@@ -302,14 +304,19 @@ order: classify, explain, repair, apply, log. Three properties are fixed
 at this level.
 
 % TODO-FULL-RUN: update after full orchestrated dataset execution
-\fullrunupdate{This orchestrator is a design target, not yet a built
-component. Each of ErrorClassifier through ResultLogger exists and is
-independently tested (\Cref{chap:methodology}); the loop described below
-that would run them together, unattended, over the full 200-row usable set
-has not been implemented at the time of writing. \Cref{chap:future-work}
-lists full orchestration and the two-round feedback mode as remaining work;
-result logging and knowledge-graph enrichment are already implemented
-(\Cref{sec:m-resultlogger}) and are not part of what remains here.}
+\fullrunupdate{The orchestrator described below is now implemented
+(\texttt{scripts/run\_pipeline.py}) and validated by a small real pilot run
+against real Ollama, PyPI, and Docker, recorded in the accompanying
+implementation documentation (\texttt{docs/pipeline-orchestrator.md}) --
+not the full 200-row usable set. Each of ErrorClassifier through ResultLogger exists,
+is independently tested, and is called by the orchestrator exactly as
+described below, including the bounded two-round feedback mode described
+later in this section. What remains is the full 200-row usable-set
+run itself, the resulting one-round-vs-two-round comparison, and full
+benchmark/knowledge-graph population from it -- \Cref{chap:future-work}.
+Result logging and knowledge-graph enrichment were already implemented
+before the orchestrator (\Cref{sec:m-resultlogger}) and are unchanged by
+it; the orchestrator only calls them.}
 
 \paragraph{Round switch.}
 The default is a single repair round. In two-round mode, if the outcome is
@@ -520,6 +527,9 @@ future work:
         ResultLogger joins the four upstream outputs and how the
         knowledge-graph mapping was implemented -- \Cref{chap:methodology};
         their validation against real pilot data -- \Cref{chap:validation}.
-  \item Full end-to-end orchestration and the two-round feedback mode --
-        \textbf{not yet implemented}; see \Cref{chap:future-work}.
+  \item Full end-to-end orchestration and the bounded two-round feedback
+        mode -- \textbf{implemented} (\texttt{scripts/run\_pipeline.py});
+        the full 200-row usable-set run and the resulting
+        one-round-vs-two-round comparison remain future work -- see
+        \Cref{chap:future-work}.
 \end{itemize}

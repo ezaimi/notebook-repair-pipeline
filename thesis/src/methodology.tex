@@ -13,10 +13,13 @@ then the PyPI-grounded repair component, then fix application, and finally
 result logging and knowledge-graph enrichment, which joins the outputs of
 every earlier component into one persistent record.
 
-Full pipeline orchestration -- a single process that would run every
-component above together, unattended, over the complete dataset -- is not
-covered in this chapter because it has not been built yet; it is addressed
-directly in \Cref{chap:future-work}.
+Full pipeline orchestration -- a single process that runs every component
+above together, unattended, in one pass -- is not covered component-by-component
+in this chapter, since it calls each component exactly as this chapter
+describes it rather than reimplementing any of them; it is addressed
+directly in \Cref{chap:architecture,chap:future-work}. It has since been
+built (\texttt{scripts/run\_pipeline.py}) and validated by a small real
+pilot, but has not yet been run over the complete dataset.
 
 \section{Implementation Overview}
 \label{sec:m-overview}
@@ -40,11 +43,14 @@ Docker-pipeline dependency-error dataset (214 rows)
     -> FAIR Jupyter knowledge graph (RDF)
 \end{verbatim}
 
-Each arrow above is a data hand-off through a plain file or database, not a
-function call inside one running program: every stage is invoked as its own
-script against the previous stage's output, and no single process currently
-runs all of them in one pass over the whole dataset --
-\Cref{sec:orchestrator,chap:future-work} return to this point directly. The
+Each arrow above is a data hand-off through a plain file, database, or
+in-memory call between the components' own existing functions: every stage
+can still be invoked as its own script against the previous stage's output,
+exactly as described in this chapter, and can also now be driven by a
+single orchestrating process (\texttt{scripts/run\_pipeline.py}) that calls
+every stage in sequence within one pass -- not yet run over the whole
+dataset. \Cref{sec:orchestrator,chap:future-work} return to this point
+directly. The
 sections below follow this same order, one component at a time, and
 \Cref{sec:m-worked-example} then traces one concrete record through every
 stage to make the resulting data flow explicit.
@@ -754,12 +760,14 @@ it does not persist its results to a database or knowledge graph -- that is
 handled separately by ResultLogger (\Cref{sec:m-resultlogger}). FixApplicator
 returns one self-contained result per attempt.
 
-% TODO-FULL-RUN: update after full orchestrated dataset execution and completion of the bounded second repair round
+% TODO-FULL-RUN: update after full orchestrated dataset execution
 \fullrunupdate{ResultLogger is implemented and validated at pilot scale, not
 yet run over the complete dataset. Wiring many such attempts into an
-unattended batch run and feeding a \texttt{still\_failing} result back into
-RAGRepairAgent for a second attempt remain explicitly future work
-(\Cref{chap:future-work}).}
+unattended batch run, and feeding a \texttt{still\_failing} result back into
+RAGRepairAgent for a bounded second attempt, are both now implemented by
+the orchestrator (\texttt{scripts/run\_pipeline.py}) and validated by a
+small real pilot; running either over the complete dataset remains future
+work (\Cref{chap:future-work}).}
 
 \section{Result Logging and Knowledge-Graph Enrichment}
 \label{sec:m-resultlogger}
@@ -863,13 +871,14 @@ RAGRepairAgent run instead. This distinction is made explicit here rather
 than left implicit in a uniform-looking column, because most repair-proposal
 records never reach FixApplicator at all, and the architecture's own
 component diagram (\Cref{fig:architecture-components}) already expects an
-abstained or failed attempt to be logged regardless. None of the earlier
-components were changed to accept a shared, externally supplied
-\texttt{run\_id} for this -- each still mints its own per invocation; a
-single orchestration-level run identifier threaded through every stage of
-one pipeline pass is left to full pipeline orchestration
-(\Cref{chap:future-work}), once it actually calls every stage in sequence
-within one pass.
+abstained or failed attempt to be logged regardless. This fallback still
+applies exactly as described whenever a component is run on its own; when
+the orchestrator (\texttt{scripts/run\_pipeline.py}) calls every stage in
+sequence within one pipeline pass, it now instead threads one shared,
+externally supplied \texttt{run\_id} through RAGRepairAgent and
+FixApplicator directly -- neither needed a new parameter for this, since
+both already accepted an optional \texttt{run\_id} override. See
+\Cref{chap:future-work} for how this was implemented and validated.
 
 \subsection{Preserving Structured Evidence Instead of Flattening It}
 \label{sec:m-resultlogger-json}

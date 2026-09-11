@@ -102,6 +102,15 @@ flowchart TD
 - **Failure handling:** every attempt is logged even when a component errors (malformed LLM output, PyPI unreachable, re-exec timeout); one bad notebook never crashes the batch.
 - **Config surface (NFR5):** model, prompt strategy, and round count are injected, so they can be swapped without code changes.
 
+**Implemented (i7):** `scripts/run_pipeline.py` implements exactly this sequence and switch -
+`--max-rounds 1|2` for the one-round/two-round control, one shared orchestration-level `run_id`
+threaded through every component call, and the same per-record failure isolation described above.
+The bounded second round's exact trigger condition, the cumulative Round 1 + Round 2 environment
+strategy, and the CLI/resume contract are documented in full in `docs/pipeline-orchestrator.md`
+rather than repeated here. Small real-pilot validation (real Ollama/PyPI/Docker, `--split dev` only)
+is recorded there and in the i7 completion report; the full 187-row evaluation run itself is still
+future work (§13 of `docs/pipeline-orchestrator.md`).
+
 ---
 
 ## 6. Data contracts
@@ -248,6 +257,13 @@ supplied `run_id` today; each mints its own per CLI invocation. Threading one or
 `run_id` through all three stages is left to i7's orchestrator, once it actually calls them in
 sequence within one pass.
 
+**Update (i7):** done, with no signature change beyond what was already there.
+`rag_repair_agent.run_repair_agent()` and `fix_applicator.apply_and_validate()` already accepted an
+optional `run_id` override (each defaulting to its own `i4-`/`i5-<timestamp>` only when omitted);
+`scripts/run_pipeline.py` simply passes one shared `i7-<timestamp>` value into every call it makes,
+for every round, for the whole invocation. See `docs/pipeline-orchestrator.md` §9 for the full
+account, including why this leaves i3/i4/i5's own component-local diagnostic fields untouched.
+
 ---
 
 ## 8. Mapping to thesis objectives
@@ -258,7 +274,7 @@ sequence within one pass.
 | O2 — Fix generation (PyPI RAG) | RAGRepairAgent + fix object (§6.1) | implemented (i4): `scripts/rag_repair_agent.py`, `scripts/pypi_retriever.py`, `scripts/compatibility_evidence.py` produce a validated, grounded fix object |
 | O3 — Fix validation | FixApplicator (re-run in container) | implemented (i5): `scripts/fix_applicator.py`, `scripts/docker_runner.py`, `scripts/notebook_outcome.py` apply a fix and re-run the notebook inside a rebuilt Docker environment; see §7.2 and `docs/fix-applicator.md` for the deviations this required from the design below |
 | O4 — Benchmark dataset | `repair_attempts` table (§6.2) | implemented and pilot-validated (i6): `scripts/result_logger.py` joins i2/i3/i4/i5 into the table; full-dataset population is future work (§10 of `docs/result-logger.md`) |
-| O5 — Pipeline integration | orchestrator + hook-in (§3, §5) | designed |
+| O5 — Pipeline integration | orchestrator + hook-in (§3, §5) | implemented and small-pilot-validated (i7): `scripts/run_pipeline.py` sequences i2-i6, implements the bounded max-two-round repair loop and the shared orchestration `run_id`; see `docs/pipeline-orchestrator.md`. Full 187-row evaluation and the final one-round-vs-two-round comparison are still future work |
 | O6 — KG enrichment | `repair_attempts.rml.ttl` (§6.3) | implemented and pilot-validated (i6): `scripts/export_repair_attempts_csv.py` + `mapping/rml_mapping/repair_attempts.rml.ttl` produce valid RDF linked to the existing FAIR Jupyter KG notebook nodes; full KG population is future work (`docs/result-logger.md`) |
 
 ---

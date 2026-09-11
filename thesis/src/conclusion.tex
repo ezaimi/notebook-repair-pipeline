@@ -55,9 +55,11 @@ that depend on more than one package.
 
 % TODO-FULL-RUN: update after completion of the bounded second repair round
 \fullrunupdate{It is also a direct argument for the
-two-round repair mode that is designed, but not yet built
+two-round repair mode, which has since been built and small-pilot-validated
 (\Cref{chap:future-work}): a single repair attempt is often only the first
-of several a real notebook may need.}
+of several a real notebook may need. Whether it is worth the extra cost at
+full scale is still an open, unmeasured question -- see the one-round
+versus two-round comparison in \Cref{chap:future-work}.}
 
 Several design decisions changed along the way, and \Cref{chap:methodology}
 recorded each one rather than hiding it behind a description that only
@@ -82,10 +84,12 @@ recorded check.
 % TODO-FULL-RUN: rewrite this closing paragraph once orchestration, the full
 % evaluation run, and full-scale knowledge-graph population exist
 \fullrunupdate{What remains is stated plainly in
-\Cref{chap:future-work}: an orchestrator
-that runs the existing components -- result logging and knowledge-graph
-enrichment now included -- together over the full dataset without a person
-driving each attempt by hand; the resulting full-scale population of the
+\Cref{chap:future-work}: an orchestrator now exists that runs the existing
+components -- result logging and knowledge-graph enrichment, and the
+bounded two-round repair mode, now included -- together without a person
+driving each attempt by hand, and has been validated by a small real pilot;
+running it unattended over the full dataset is what remains. That full run's
+resulting full-scale population of the
 \texttt{repair\_attempts} table and the FAIR Jupyter knowledge graph, which
 today hold only the pilot-scale records reported in \Cref{chap:validation};
 and the full-scale evaluation -- including a one-round versus two-round

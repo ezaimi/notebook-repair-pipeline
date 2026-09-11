@@ -129,3 +129,69 @@ def test_render_repair_prompt_fills_every_placeholder():
     prompt = render_repair_prompt(sample_record(), wrong_version_retrieval_result(), "wrong_version", template)
 
     assert "{{" not in prompt
+
+
+# --- warning-noise regression (real pandas pilot failure) --------------------
+#
+# A real distribution (e.g. "pandas") can carry hundreds of "unparseable
+# PyPI filename" warnings from legacy Windows .exe/.egg release artifacts.
+# Joining all of them unbounded into the prompt was observed, in a real i7
+# pilot run, to produce a prompt so dominated by that noise that gemma2:9b
+# echoed it back as a malformed proposal instead of proposing a fix. These
+# tests guard the fix: the prompt-facing summary must be bounded, while the
+# underlying retrieval_result (provenance) must stay completely untouched.
+
+
+def many_warnings_retrieval_result(n=250):
+    return {
+        "distribution_name": "pandas",
+        "python_version": "3.10",
+        "candidate_versions": [
+            {"version": "2.2.0", "python_compatibility": "compatible"},
+        ],
+        "compatibility_evidence": None,
+        "warnings": [
+            f"Skipping unparseable PyPI filename: 'pandas-0.{i}.0.win32-py2.7.exe'" for i in range(n)
+        ],
+    }
+
+
+def test_format_warnings_bounds_large_warning_lists_for_the_prompt():
+    values = build_repair_template_values(sample_record(), many_warnings_retrieval_result(250), "missing_package")
+
+    rendered_warnings = values["retrieval_warnings"]
+    assert "250 warning(s)" in rendered_warnings
+    assert rendered_warnings.count("Skipping unparseable PyPI filename") <= 3
+    assert "more omitted" in rendered_warnings
+    # nowhere near the ~250-line original (~9000+ chars unbounded)
+    assert len(rendered_warnings) < 1000
+
+
+def test_format_warnings_never_mutates_or_discards_the_original_retrieval_result():
+    """Provenance requirement: the full warnings list must survive untouched
+    in retrieval_result (and therefore in the persisted i4 record and
+    repair_attempts.pypi_evidence) - only the rendered prompt text is
+    bounded."""
+    result = many_warnings_retrieval_result(250)
+    original_warnings = list(result["warnings"])
+
+    build_repair_template_values(sample_record(), result, "missing_package")
+
+    assert result["warnings"] == original_warnings
+    assert len(result["warnings"]) == 250
+
+
+def test_format_warnings_shows_every_warning_when_the_list_is_small():
+    result = missing_package_retrieval_result()
+    result["warnings"] = ["one warning", "two warning"]
+
+    values = build_repair_template_values(sample_record(), result, "missing_package")
+
+    assert "one warning" in values["retrieval_warnings"]
+    assert "two warning" in values["retrieval_warnings"]
+    assert "omitted" not in values["retrieval_warnings"]
+
+
+def test_format_warnings_is_none_when_there_are_no_warnings():
+    values = build_repair_template_values(sample_record(), missing_package_retrieval_result(), "missing_package")
+    assert values["retrieval_warnings"] == "none"
