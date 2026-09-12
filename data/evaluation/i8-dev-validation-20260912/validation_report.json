@@ -1,0 +1,65 @@
+{
+  "run_id": "i8-dev-validation-20260912",
+  "checks": [
+    {
+      "name": "expected_record_count",
+      "passed": true,
+      "detail": "expected=13 actual=13"
+    },
+    {
+      "name": "all_expected_ids_present",
+      "passed": true,
+      "detail": "missing=[] unexpected=[]"
+    },
+    {
+      "name": "no_silent_skips",
+      "passed": true,
+      "detail": "duplicate_trace_ids=[]"
+    },
+    {
+      "name": "no_duplicate_repair_attempts_rows",
+      "passed": true,
+      "detail": "duplicates=[]"
+    },
+    {
+      "name": "no_round_greater_than_two",
+      "passed": true,
+      "detail": "offending_notebook_execution_ids=[]"
+    },
+    {
+      "name": "every_round2_row_has_round1_row",
+      "passed": true,
+      "detail": "orphan_round2_notebook_execution_ids=[]"
+    },
+    {
+      "name": "round2_only_after_valid_trigger",
+      "passed": true,
+      "detail": "offending_notebook_execution_ids=[]"
+    },
+    {
+      "name": "single_run_id",
+      "passed": true,
+      "detail": "expected=i8-dev-validation-20260912 unexpected_trace_run_ids=[] unexpected_row_run_ids=[]"
+    },
+    {
+      "name": "no_excluded_records_in_evaluation_split",
+      "passed": true,
+      "detail": "not applicable (split != evaluation)"
+    },
+    {
+      "name": "no_dev_records_in_evaluation_split",
+      "passed": true,
+      "detail": "not applicable (split != evaluation)"
+    },
+    {
+      "name": "manifest_config_hash_consistency",
+      "passed": true,
+      "detail": "{}"
+    },
+    {
+      "name": "result_logger_row_reconciliation",
+      "passed": true,
+      "detail": "missing_rows=[] unexpected_rows=[]"
+    }
+  ]
+}

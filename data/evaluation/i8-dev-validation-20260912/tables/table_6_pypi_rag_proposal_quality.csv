@@ -1,0 +1,5 @@
+metric,value
+proposal_validity_rate,1.0
+grounding_pass_rate,1.0
+end_to_end_valid_grounded_proposal_rate,1.0
+distribution_resolution_accuracy,not yet available - manual ground truth not filled in

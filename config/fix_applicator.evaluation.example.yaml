@@ -1,0 +1,47 @@
+# Machine-specific FixApplicator override for I8 evaluation runs.
+#
+# Why this exists: config/fix_applicator.yaml's default
+# `upstream_docker_pipeline.db_path` (a `~/era/...`-relative path) resolves
+# correctly under a native Linux/WSL Python interpreter, but NOT when a
+# Windows-native Python interpreter is used against this repository over
+# its WSL UNC mount (`\\wsl.localhost\...`) - in that specific setup,
+# `~` expands to the Windows user profile (not the WSL home), and even a
+# correct UNC path there is unreliable for SQLite access (see
+# docs/i8-evaluation-methodology.md, "Exact-commit requirement", and the
+# I8 final validation report for the concrete finding and workaround).
+#
+# This file is a copy-paste TEMPLATE only - do not edit db_path here and
+# do not commit a version of this file with a real absolute path in it.
+# Copy it to config/fix_applicator.evaluation.local.yaml (already
+# .gitignore'd) and fill in a real local path there instead.
+#
+# Setup used for the I8 dev validation and pre-final-evaluation freeze:
+#   1. Locate the real upstream DB (this repo's sibling checkout):
+#        computational-reproducibility-pmc-docker/data/db/db.sqlite
+#   2. Copy it to a genuine LOCAL (non-UNC) filesystem path reachable by
+#      whichever Python interpreter will run scripts/run_pipeline.py -
+#      e.g. on Windows, somewhere under C:\Users\<you>\..., never a
+#      \\wsl.localhost\... path, even one that "looks" local.
+#   3. Record its SHA-256 (see the I8 pre-final-evaluation freeze record)
+#      so the evaluation manifest can note exactly which copy was used.
+#   4. Point db_path at that local copy below.
+#
+# Everything else in this file is identical to config/fix_applicator.yaml
+# and must stay that way - this file exists ONLY to override db_path, not
+# to change any FixApplicator behavior.
+
+dataset:
+  i2_path: "data/context-classification/dependency_error_contexts.jsonl"
+
+upstream_docker_pipeline:
+  db_path: "C:/Users/<you>/path/to/local/upstream_pmc_docker_db.sqlite"
+
+execution:
+  clone_timeout_seconds: 120
+  checkout_timeout_seconds: 60
+  build_timeout_seconds: 600
+  run_timeout_seconds: 900
+  cleanup_timeout_seconds: 30
+
+output:
+  path: "data/fix-attempts/fix_attempts.jsonl"
