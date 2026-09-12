@@ -1,0 +1,111 @@
+{
+  "distribution_resolution_accuracy": 0.4117647058823529,
+  "n_checked": 17,
+  "n_correct": 7,
+  "n_rows": 20,
+  "n_skipped_unfilled": 3,
+  "per_row": [
+    {
+      "correct": true,
+      "import_name": "numpy",
+      "manual_correct_distribution": "numpy",
+      "pipeline_resolved_distribution": "numpy"
+    },
+    {
+      "correct": true,
+      "import_name": "umap",
+      "manual_correct_distribution": "umap-learn",
+      "pipeline_resolved_distribution": "umap-learn"
+    },
+    {
+      "correct": false,
+      "import_name": "pkg_resources",
+      "manual_correct_distribution": "standard-pkg-resources",
+      "pipeline_resolved_distribution": "setuptools"
+    },
+    {
+      "correct": true,
+      "import_name": "sklearn",
+      "manual_correct_distribution": "scikit-learn",
+      "pipeline_resolved_distribution": "scikit-learn"
+    },
+    {
+      "correct": true,
+      "import_name": "pandas",
+      "manual_correct_distribution": "pandas",
+      "pipeline_resolved_distribution": "pandas"
+    },
+    {
+      "correct": true,
+      "import_name": "cv2",
+      "manual_correct_distribution": "opencv-python",
+      "pipeline_resolved_distribution": "opencv-python"
+    },
+    {
+      "correct": true,
+      "import_name": "scipy",
+      "manual_correct_distribution": "scipy",
+      "pipeline_resolved_distribution": "scipy"
+    },
+    {
+      "correct": true,
+      "import_name": "skimage",
+      "manual_correct_distribution": "scikit-image",
+      "pipeline_resolved_distribution": "scikit-image"
+    },
+    {
+      "correct": false,
+      "import_name": "rpy2",
+      "manual_correct_distribution": "rpy2",
+      "pipeline_resolved_distribution": ""
+    },
+    {
+      "correct": false,
+      "import_name": "cana",
+      "manual_correct_distribution": "cana",
+      "pipeline_resolved_distribution": ""
+    },
+    {
+      "correct": false,
+      "import_name": "celloracle",
+      "manual_correct_distribution": "celloracle",
+      "pipeline_resolved_distribution": ""
+    },
+    {
+      "correct": false,
+      "import_name": "keras",
+      "manual_correct_distribution": "keras",
+      "pipeline_resolved_distribution": ""
+    },
+    {
+      "correct": false,
+      "import_name": "omero",
+      "manual_correct_distribution": "omero-py",
+      "pipeline_resolved_distribution": ""
+    },
+    {
+      "correct": false,
+      "import_name": "physicool",
+      "manual_correct_distribution": "physicool",
+      "pipeline_resolved_distribution": ""
+    },
+    {
+      "correct": false,
+      "import_name": "gnomad",
+      "manual_correct_distribution": "gnomad",
+      "pipeline_resolved_distribution": ""
+    },
+    {
+      "correct": false,
+      "import_name": "dms_variants",
+      "manual_correct_distribution": "dms-variants",
+      "pipeline_resolved_distribution": ""
+    },
+    {
+      "correct": false,
+      "import_name": "statsmodels",
+      "manual_correct_distribution": "statsmodels",
+      "pipeline_resolved_distribution": ""
+    }
+  ]
+}

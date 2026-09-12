@@ -1,0 +1,5 @@
+subtype,precision,recall,f1,tp,fp,fn
+mapping_unknown,1.0,0.6666666666666666,0.8,4,0,2
+missing_package,0.8,1.0,0.888888888888889,16,4,0
+system_library,1.0,1.0,1.0,10,0,0
+wrong_version,1.0,0.8823529411764706,0.9375,15,0,2

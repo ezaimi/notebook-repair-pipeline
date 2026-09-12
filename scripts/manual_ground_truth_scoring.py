@@ -113,6 +113,20 @@ def overall_accuracy(matrix: Dict[str, Dict[str, int]]) -> Optional[float]:
     return correct / total if total else None
 
 
+PREVALENCE_WEIGHTED_ACCURACY_CAVEAT = (
+    "This re-weighting is only a valid population-level estimate if `population_weights` comes "
+    "from a source INDEPENDENT of the classifier being evaluated. Subtype counts derived from the "
+    "same pipeline's own classification of the full 214-record dataset (e.g. missing_package=179, "
+    "wrong_version=21, system_library=10, mapping_unknown=4) are NOT independent ground truth - "
+    "using them as weights implicitly assumes the pipeline's population-wide classification is "
+    "already correct, which is exactly what this metric is trying to measure. Do not present the "
+    "resulting number as population-wide classifier accuracy in a thesis or report unless the "
+    "population weights are independently known (e.g. from a full manual audit of all 214 records) "
+    "or a properly justified design-based estimator is used instead. See "
+    "docs/i8-evaluation-methodology.md."
+)
+
+
 def prevalence_weighted_accuracy(
     matrix: Dict[str, Dict[str, int]], population_weights: Dict[str, float]
 ) -> Optional[float]:
@@ -123,7 +137,12 @@ def prevalence_weighted_accuracy(
     than by its inflated sample share. Classes missing from `matrix` (never
     sampled) are simply not represented in the weighted sum - the caller
     is responsible for making sure every class with nonzero population
-    weight was actually sampled, or documenting the gap."""
+    weight was actually sampled, or documenting the gap.
+
+    CAUTION - see PREVALENCE_WEIGHTED_ACCURACY_CAVEAT: this is only a valid
+    population estimate when `population_weights` is independently known,
+    not derived from the same classifier's own predictions over the
+    population."""
     weighted_sum = 0.0
     total_weight = 0.0
     for label, predictions in matrix.items():
@@ -180,7 +199,14 @@ def score_classifier_sample(
     (methodology §D option B: stratified oversample) overall_accuracy() is
     still returned for transparency but flagged not-population-
     representative, and prevalence_weighted_accuracy() is computed if
-    `population_weights` is supplied."""
+    `population_weights` is supplied - see PREVALENCE_WEIGHTED_ACCURACY_CAVEAT
+    (also attached to the result as
+    subtype.prevalence_weighted_overall_accuracy_caveat): that number is
+    only a valid population estimate when `population_weights` is
+    independently known, not derived from the same classifier's own
+    predictions over the population. Report `naive_overall_accuracy` as
+    "manual validation sample accuracy", never as population-wide accuracy,
+    unless treat_as_full_population is True."""
     scope_rows, scope_skipped = split_filled_rows(rows, "manual_scope_status")
     subtype_rows, subtype_skipped = split_filled_rows(rows, "manual_subtype")
     module_rows, module_skipped = split_filled_rows(rows, "manual_failing_module")
@@ -207,7 +233,15 @@ def score_classifier_sample(
             "per_class": per_class_precision_recall_f1(subtype_matrix),
             "naive_overall_accuracy": overall_accuracy(subtype_matrix),
             "naive_overall_accuracy_is_population_representative": treat_as_full_population,
+            "naive_overall_accuracy_label": (
+                f"Manual validation sample accuracy (n={len(subtype_rows)})"
+                if not treat_as_full_population
+                else f"Population accuracy (all {len(subtype_rows)} records manually labeled)"
+            ),
             "prevalence_weighted_overall_accuracy": weighted_accuracy,
+            "prevalence_weighted_overall_accuracy_caveat": (
+                PREVALENCE_WEIGHTED_ACCURACY_CAVEAT if weighted_accuracy is not None else None
+            ),
         },
         "failing_module": {
             "n_scored": len(module_rows),

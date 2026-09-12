@@ -1,0 +1,7 @@
+actual,predicted,count
+missing_package,missing_package,16
+system_library,system_library,10
+wrong_version,missing_package,2
+wrong_version,wrong_version,15
+mapping_unknown,mapping_unknown,4
+mapping_unknown,missing_package,2

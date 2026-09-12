@@ -196,10 +196,19 @@ def write_outputs(report: Dict[str, Any], summary_dir: Path, tables_dir: Path) -
                 "value": report["secondary"]["end_to_end_valid_grounded_proposal_rate"],
             },
             {
-                "metric": "distribution_resolution_accuracy",
+                "metric": "distribution_resolution_accuracy_on_manually_resolvable_diagnostic_sample",
                 "value": report["pypi_resolution_scoring"].get("distribution_resolution_accuracy")
                 if report["pypi_resolution_scoring"].get("available", True)
                 else "not yet available - manual ground truth not filled in",
+            },
+            {
+                "metric": "note",
+                "value": (
+                    "Denominator is the manually resolvable rows in the frozen diagnostic sample "
+                    "(known-mapped + frequent-unmapped + ambiguous import names), not a random or "
+                    "population-representative sample - do not report as population-wide PyPI "
+                    "resolution accuracy."
+                ),
             },
         ],
         tables_dir / "table_6_pypi_rag_proposal_quality.csv",
@@ -212,23 +221,40 @@ def write_outputs(report: Dict[str, Any], summary_dir: Path, tables_dir: Path) -
             tables_dir / "table_7_classifier_performance.csv",
         )
     else:
+        n_scored = classifier_scoring["scope_status"]["n_scored"]
         write_kv_csv(
             [
-                {"metric": "scope_status_accuracy", "value": classifier_scoring["scope_status"]["metrics"]["accuracy"]},
-                {"metric": "scope_status_precision", "value": classifier_scoring["scope_status"]["metrics"]["precision"]},
-                {"metric": "scope_status_recall", "value": classifier_scoring["scope_status"]["metrics"]["recall"]},
-                {"metric": "scope_status_f1", "value": classifier_scoring["scope_status"]["metrics"]["f1"]},
                 {
-                    "metric": "subtype_naive_overall_accuracy",
+                    "metric": f"scope_status_accuracy_on_{n_scored}_record_manual_validation_sample",
+                    "value": classifier_scoring["scope_status"]["metrics"]["accuracy"],
+                },
+                {
+                    "metric": f"scope_status_precision_on_{n_scored}_record_manual_validation_sample",
+                    "value": classifier_scoring["scope_status"]["metrics"]["precision"],
+                },
+                {
+                    "metric": f"scope_status_recall_on_{n_scored}_record_manual_validation_sample",
+                    "value": classifier_scoring["scope_status"]["metrics"]["recall"],
+                },
+                {
+                    "metric": f"scope_status_f1_on_{n_scored}_record_manual_validation_sample",
+                    "value": classifier_scoring["scope_status"]["metrics"]["f1"],
+                },
+                {
+                    "metric": f"subtype_accuracy_on_{n_scored}_record_manual_validation_sample",
                     "value": classifier_scoring["subtype"]["naive_overall_accuracy"],
                 },
                 {
-                    "metric": "subtype_prevalence_weighted_overall_accuracy",
-                    "value": classifier_scoring["subtype"]["prevalence_weighted_overall_accuracy"],
+                    "metric": f"failing_module_exact_match_accuracy_on_{n_scored}_record_manual_validation_sample",
+                    "value": classifier_scoring["failing_module"]["exact_match_accuracy"],
                 },
                 {
-                    "metric": "failing_module_exact_match_accuracy",
-                    "value": classifier_scoring["failing_module"]["exact_match_accuracy"],
+                    "metric": "population_wide_accuracy_estimate",
+                    "value": (
+                        "not reported - the validation sample deliberately oversamples rare subtypes, "
+                        "and no statistically valid design-based population estimator is implemented; "
+                        "see docs/i8-evaluation-methodology.md"
+                    ),
                 },
             ],
             tables_dir / "table_7_classifier_performance.csv",

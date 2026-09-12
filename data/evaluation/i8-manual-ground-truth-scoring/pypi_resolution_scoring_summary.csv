@@ -1,0 +1,10 @@
+metric,value
+total_sample_size,20
+manually_resolvable_count,17
+intentionally_unresolved_ambiguous_count,3
+correct_pipeline_resolutions,7
+incorrect_or_missing_pipeline_resolutions,10
+incorrect_non_blank_pipeline_mappings,1
+missing_pipeline_mappings_with_manual_answer,9
+distribution_resolution_accuracy_on_manually_resolvable_diagnostic_sample,0.4117647058823529
+note,"This is a 20-name diagnostic sample (known-mapped + frequent-unmapped + ambiguous names), not a representative random sample of every import name the pipeline will see - do not report this accuracy as population-wide PyPI resolution accuracy. The 3 intentionally unresolved rows are excluded from this denominator, not counted as incorrect."

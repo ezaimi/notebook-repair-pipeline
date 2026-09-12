@@ -35,7 +35,27 @@ fill, one row at a time:
 |---|---|
 | `manual_scope_status` | `usable` if this is genuinely a pip-installable dependency problem in scope for automated repair; `excluded` if it genuinely requires a system library, is an ambiguous local/module-path import, or otherwise falls outside pip-only repair scope. Judge this from `error_type`/`error_message` alone. |
 | `manual_subtype` | One of `missing_package`, `wrong_version`, `system_library`, `mapping_unknown` (or a new label if none of these genuinely fit — write it and add a note). |
-| `manual_failing_module` | The exact module/package name the error is actually about, as you would extract it yourself from `error_message` — not necessarily identical to `predicted_failing_module`. |
+| `manual_failing_module` | The **top-level** failing dependency/module the classifier is intended to extract — not the full dotted submodule path, even when the error message names a specific submodule. Not necessarily identical to `predicted_failing_module`; write down what you independently believe is correct. |
+
+**Top-level-module rule, applied consistently to every row:** if the error
+names a submodule (`package.submodule...`), record only the top-level
+package name. This keeps the metric well-defined and reproducible instead
+of depending on how deep into a dotted path a given error message happens
+to go.
+
+| Error message names | `manual_failing_module` |
+|---|---|
+| `scipy.integrate` | `scipy` |
+| `scipy.sparse.sputils` | `scipy` |
+| `bokeh.tile_providers` | `bokeh` |
+| `mpl_toolkits.axes_grid` | `mpl_toolkits` |
+| `utils.image_processor` | `utils` |
+| `libxcb.so.1` (already top-level) | `libxcb.so.1` |
+
+For a shared-library error (`lib*.so.N: cannot open shared object file: No
+such file or directory`), the module is the library filename at the start
+of the message (e.g. `libxcb.so.1`) — never a word copied from later in
+the boilerplate text (e.g. "directory").
 
 Use `notes` for anything ambiguous or worth flagging (e.g. "could be
 either wrong_version or missing_package, message is unclear").
@@ -56,6 +76,33 @@ One column to fill:
 
 Use `notes` for anything worth flagging (e.g. "package renamed/deprecated
 on PyPI", "ambiguous — multiple candidate distributions").
+
+## Interpreting the resulting metrics — sample, not population
+
+Both samples are deliberately **not** simple random samples of their
+respective populations, so any accuracy computed from them describes
+**performance on that sample**, not a population-wide estimate, unless
+stated otherwise:
+
+- The classifier sample (49 rows) intentionally oversamples the rare
+  subtypes (`system_library`, `mapping_unknown` taken exhaustively;
+  `wrong_version`/`missing_package` stratified) — report results as, e.g.,
+  "subtype classification accuracy was X% (Y/49) on the stratified
+  49-record manual validation sample", never as "population-wide subtype
+  accuracy". A prevalence-weighted re-estimate is only valid when the
+  population weights come from an *independent* source — subtype counts
+  taken from this same pipeline's own classification of all 214 records do
+  not qualify (see `scripts/manual_ground_truth_scoring.py`'s
+  `PREVALENCE_WEIGHTED_ACCURACY_CAVEAT`) — so that number must not appear
+  in thesis-ready reporting unless a properly justified estimator replaces
+  it.
+- The PyPI resolution sample (20 rows) is a **diagnostic** sample —
+  already-mapped names, frequent unmapped names, and a few ambiguous
+  cases — not a representative random sample of every import name the
+  pipeline will ever see. Report its accuracy as, e.g., "distribution-
+  resolution accuracy on the 17 manually resolvable cases in the frozen
+  20-name diagnostic sample", never as population-wide PyPI resolution
+  accuracy.
 
 ## Optional: abstention correctness (bounded sample, later)
 
