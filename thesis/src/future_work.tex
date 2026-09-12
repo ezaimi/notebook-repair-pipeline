@@ -5,64 +5,86 @@ This chapter states plainly what has not been built yet, so that nothing in
 the preceding chapters is mistaken for a finished system. Result logging
 and knowledge-graph enrichment, listed as remaining work in an earlier
 draft of this chapter, have since been implemented and validated at pilot
-scale (\Cref{sec:m-resultlogger,sec:v-i6}); what is listed here is what
-that work does not yet cover, together with the full pipeline orchestration
-and evaluation work planned from the outset. None of it exists in the
-repository at the time of writing, confirmed by direct inspection rather
-than assumed.
+scale (\Cref{sec:m-resultlogger,sec:v-i6}); full pipeline orchestration,
+shared run-level metadata, and the bounded second repair round -- also
+listed as remaining work in an earlier draft -- have likewise since been
+implemented and validated by a small real pilot (see below). What is
+listed here is what none of that work yet covers: running any of it,
+unattended, over the full dataset, and the evaluation work that depends on
+having done so. Confirmed by direct inspection rather than assumed.
 
 \section{Remaining Implementation}
 
-\paragraph{Full Pipeline Orchestration.} \Cref{chap:architecture} describes
-an orchestrator that loops over every usable row, running classification,
-explanation, repair, fix application, and result logging in sequence and
-logging every attempt, including ones where a component itself fails. No
-such loop exists yet: each component so far has been run and validated
-independently, as described in \Cref{chap:methodology,chap:validation}.
-Building it is mostly integration work, since every component it would
-call -- ResultLogger included -- already has a stable, tested interface.
+\paragraph{Full Pipeline Orchestration -- implemented.} \Cref{chap:architecture}
+describes an orchestrator that loops over every usable row, running
+classification, explanation, repair, fix application, and result logging
+in sequence and logging every attempt, including ones where a component
+itself fails. This loop is now implemented (\texttt{scripts/run\_pipeline.py})
+and exercised end to end, with real Ollama, PyPI, and Docker calls, against
+a small number of development-split records -- not yet the full 200-row
+usable set (see "Full-Dataset Population" and "Full Evaluation Run"
+below). Every component it calls -- ResultLogger included -- is called
+through its existing, unmodified interface; building the orchestrator
+required no redesign of any of them, only the two small, backwards-compatible
+plumbing additions described next and in \Cref{chap:architecture}.
 
-\paragraph{Shared Run-Level Metadata.} One thing full pipeline orchestration
-would add that no component has today is a single, shared run identifier
-threaded through every stage of one pipeline pass: the classification,
-explanation, repair, and fix-application components each still mint their
-own \texttt{run\_id} per invocation, and ResultLogger's own fallback
-behaviour (\Cref{sec:m-resultlogger-row}) exists specifically to keep every
-attempt traceable in the absence of that shared identifier.
+\paragraph{Shared Run-Level Metadata -- implemented.} The orchestrator
+generates a single \texttt{run\_id} (shaped \texttt{i7-<UTC timestamp>}, or
+an explicit override) once per invocation and passes it into every call to
+LLMExplainer, RAGRepairAgent, and FixApplicator for every row and every
+round that invocation processes. RAGRepairAgent and FixApplicator already
+accepted an optional \texttt{run\_id} override before this change; no new
+parameter was needed on either. Every \texttt{repair\_attempts} row an
+orchestrated run writes now carries that same, genuinely shared, run
+identifier. ResultLogger's own per-record fallback behaviour
+(\Cref{sec:m-resultlogger-row}) is unchanged and still applies when a
+repair attempt has no matching fix-application outcome to fall back to.
 
-\paragraph{Bounded Second Repair Round.} When FixApplicator reports
-\texttt{still\_failing} with a genuinely new error
-(\Cref{sec:v-key-observation}), the design allows feeding that new error
-back into RAGRepairAgent for one further attempt. The pilot in
-\Cref{chap:validation} shows this input already exists and is already
-correctly distinguished from "the fix did not work"; the feedback loop
-itself, and the planned one-round-versus-two-round comparison, have not
-been built or run. \texttt{repair\_attempts.round} is consequently always
-\texttt{1} in every row logged so far (\Cref{sec:m-resultlogger-row}), since
-no second round exists yet to produce a different value.
+\paragraph{Bounded Second Repair Round -- implemented.} When FixApplicator
+reports \texttt{still\_failing} with a genuinely new error
+(\Cref{sec:v-key-observation}), the orchestrator now reclassifies that new
+error with the same classifier used for every original dataset row, and
+feeds it back into RAGRepairAgent for one further, bounded attempt --
+capped at two rounds in total, regardless of configuration; a third round
+is not reachable by any code path. Round 2 reuses RAGRepairAgent and
+FixApplicator unmodified, targets only the newly-exposed failure (never
+the original one), and re-applies Round 1's already-validated fix inside
+the freshly rebuilt Round 2 container before applying Round 2's own fix,
+so the notebook is re-executed against "original environment + Round 1 +
+Round 2," not "original environment + Round 2 only." \texttt{repair\_attempts.round}
+can now be \texttt{2}, and is, for the small pilot rows this chapter's
+"Full-Dataset Population" paragraph describes; a full second round only
+fires when the reclassified new error is itself pip-repair-eligible, which
+a real pilot case (\Cref{chap:validation}) showed is not guaranteed even
+when the new error is a genuine, different \texttt{missing\_package}
+failure -- see that chapter for what was actually observed.
 
 \paragraph{Full-Dataset Population of the Benchmark Table and Knowledge
 Graph.} ResultLogger, the CSV export, and the RML mapping
 (\Cref{sec:m-resultlogger}) are implemented and validated against real
-pilot data (\Cref{sec:v-i6}), but none of them has been run over the
-complete 200-row usable set. The \texttt{repair\_attempts} table and the
-knowledge-graph triples derived from it currently hold only the small
+pilot data (\Cref{sec:v-i6}), and the orchestrator that would drive them
+over the full dataset now exists too, but none of them has been run over
+the complete 200-row usable set. The \texttt{repair\_attempts} table and
+the knowledge-graph triples derived from it currently hold only the small
 number of pilot records reported in \Cref{chap:validation}, not the full
-dataset. Populating them at full scale requires full pipeline orchestration
-above, since it depends on classification, explanation, repair, and fix
-application having already been run, unattended, over every usable row.
+dataset. Populating them at full scale is now only a matter of invoking the
+orchestrator above over every usable row, not of building anything further.
 
 \section{Remaining Evaluation}
 
 \paragraph{Full Evaluation Run.} The pilots in \Cref{chap:validation} cover
 fewer than ten records in total. The 187-row evaluation split reserved in
-\Cref{chap:problem-dataset} has not been run. Doing so requires the
-orchestrator above, since running 187 rows one at a time by hand is not
-practical.
+\Cref{chap:problem-dataset} has not been run. The orchestrator needed to do
+so now exists (see above) and is deliberately defaulted away from that
+split during development to avoid consuming it prematurely; running it is
+now a matter of invoking that orchestrator 187 times with
+\texttt{-{}-split evaluation}, which has not been done.
 
 \paragraph{One-Round versus Two-Round Comparison.} Comparing repair success
-with and without the second repair round requires both the orchestrator and
-the two-round mode described above; neither exists yet.
+with and without the second repair round requires running the
+now-implemented orchestrator's two-round mode over the full evaluation
+split above and comparing it against a one-round run over the same split;
+neither run has been performed yet.
 
 \paragraph{Explanation Quality Evaluation.} The project plan includes a
 user study with Likert-scale scoring of explanation quality and a Cohen's
@@ -86,8 +108,8 @@ every step before it.
 
 \section{Summary}
 
-% TODO-FULL-RUN: revisit every row of this table once orchestration, the
-% full evaluation run, and knowledge-graph population are complete
+% TODO-FULL-RUN: revisit every row of this table once the full evaluation
+% run and full-scale knowledge-graph population are complete
 \Cref{tab:future-summary} separates what this thesis reports as done from
 what remains, to avoid any ambiguity.
 
@@ -104,9 +126,10 @@ what remains, to avoid any ambiguity.
     Result logging (SQLite) and knowledge-graph enrichment (RML mapping) &
       Implemented, tested, pilot-validated \\
     \hline
-    Full pipeline orchestration, incl.\ shared run-level metadata & Not started \\
+    Full pipeline orchestration, incl.\ shared run-level metadata &
+      Implemented, tested, small-real-pilot-validated \\
     \hline
-    Bounded second repair round & Not started \\
+    Bounded second repair round & Implemented, tested, small-real-pilot-validated \\
     \hline
     Full-dataset population of \texttt{repair\_attempts} and the knowledge graph &
       Not started \\

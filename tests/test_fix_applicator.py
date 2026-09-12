@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -10,7 +11,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import fix_applicator
-from fix_applicator import apply_and_validate, load_fix_applicator_config, resolve_attempt
+from fix_applicator import (
+    apply_and_validate,
+    default_repository_metadata_lookup,
+    load_fix_applicator_config,
+    resolve_attempt,
+)
 
 
 CONFIG = {"execution": {}}
@@ -223,6 +229,154 @@ def test_resolve_attempt_lookup_failure_does_not_raise():
     assert attempt["repository_commit"] is None
 
 
+# --- commit_resolution_note: explain a missing commit, never mask it --------
+#
+# Real i7 pilot finding: an orchestrated Round 1 for notebook_execution_id=8
+# reported commit_checkout_status="skipped_no_commit" even though the real
+# sibling-pipeline DB does record a commit for that repository. Root cause
+# (confirmed by direct inspection, not assumed): the configured
+# upstream_docker_pipeline.db_path uses "~", which resolves to the *host
+# Python process's* home directory - not necessarily the directory the
+# sibling pipeline's data actually lives in on every execution environment
+# (e.g. a native-Windows Python process reaching this repo through a WSL
+# mount). This is an existing, already-documented "best effort, non-fatal"
+# characteristic of default_repository_metadata_lookup() (see its own
+# docstring and config/fix_applicator.yaml's comment) - not a metadata-
+# propagation bug in resolve_attempt()/apply_and_validate(), which already
+# correctly forward whatever the lookup returns. These tests lock in the
+# one real gap: *why* a commit ended up missing was previously invisible.
+
+
+def test_resolve_attempt_commit_resolution_note_is_none_when_commit_found():
+    def lookup(repository_id):
+        return {"commit": "abc123"}
+
+    attempt = resolve_attempt(_i4_success(), {8: _i2_row()}, repository_metadata_lookup=lookup)
+    assert attempt["repository_commit"] == "abc123"
+    assert attempt["commit_resolution_note"] is None
+
+
+def test_resolve_attempt_commit_resolution_note_when_no_lookup_configured():
+    attempt = resolve_attempt(_i4_success(), {8: _i2_row()}, repository_metadata_lookup=None)
+    assert attempt["repository_commit"] is None
+    assert "no repository metadata lookup was configured" in attempt["commit_resolution_note"]
+
+
+def test_resolve_attempt_commit_resolution_note_when_lookup_returns_nothing():
+    def lookup(repository_id):
+        return None
+
+    attempt = resolve_attempt(_i4_success(), {8: _i2_row()}, repository_metadata_lookup=lookup)
+    assert attempt["repository_commit"] is None
+    assert "repository_id=14" in attempt["commit_resolution_note"]
+    assert "unavailable in source metadata" in attempt["commit_resolution_note"]
+
+
+def test_resolve_attempt_commit_resolution_note_when_metadata_has_no_commit_field():
+    def lookup(repository_id):
+        return {"requirements": "requirements.txt"}  # real row, just no recorded commit
+
+    attempt = resolve_attempt(_i4_success(), {8: _i2_row()}, repository_metadata_lookup=lookup)
+    assert attempt["repository_commit"] is None
+    assert "no recorded commit" in attempt["commit_resolution_note"]
+
+
+def test_resolve_attempt_lookup_failure_commit_resolution_note_reflects_no_data():
+    def lookup(repository_id):
+        raise RuntimeError("db unavailable")
+
+    attempt = resolve_attempt(_i4_success(), {8: _i2_row()}, repository_metadata_lookup=lookup)
+    assert attempt["repository_commit"] is None
+    assert "unavailable in source metadata" in attempt["commit_resolution_note"]
+
+
+def test_apply_and_validate_propagates_commit_resolution_note(tmp_path):
+    runner = ScriptedDockerRunner(run_container_writes="fixed")
+    result = apply_and_validate(_i4_success(), {8: _i2_row()}, CONFIG, runner=runner, work_dir_base=tmp_path)
+    assert result["repository_commit"] is None
+    assert "no repository metadata lookup was configured" in result["commit_resolution_note"]
+
+
+# --- default_repository_metadata_lookup(): the real sqlite-backed path -----
+
+
+def _write_repositories_db(path, rows):
+    """rows: list of (id, repository, commit, requirements, setups) tuples,
+    matching the real sibling pipeline's `repositories` table shape (see
+    scripts/extract_error_contexts.py::load_repository_metadata())."""
+    connection = sqlite3.connect(str(path))
+    connection.execute(
+        'CREATE TABLE repositories (id INTEGER, repository TEXT, "commit" TEXT, '
+        "requirements TEXT, setups TEXT, pipfiles TEXT, pipfile_locks TEXT)"
+    )
+    connection.executemany(
+        'INSERT INTO repositories (id, repository, "commit", requirements, setups, pipfiles, pipfile_locks) '
+        "VALUES (?, ?, ?, ?, ?, '', '')",
+        rows,
+    )
+    connection.commit()
+    connection.close()
+
+
+def test_default_repository_metadata_lookup_reads_commit_from_a_real_sqlite_file(tmp_path):
+    db_path = tmp_path / "db.sqlite"
+    _write_repositories_db(
+        db_path,
+        [(14, "mdjaffardjy/AnalyseDonneesNextflow", "1a03b9b88da238d430f577f65c39f4377375edcb", "", "setup.py")],
+    )
+
+    lookup = default_repository_metadata_lookup(str(db_path))
+    metadata = lookup(14)
+
+    assert metadata["commit"] == "1a03b9b88da238d430f577f65c39f4377375edcb"
+    assert metadata["setups"] == "setup.py"
+
+
+def test_default_repository_metadata_lookup_unknown_repository_id_returns_none(tmp_path):
+    db_path = tmp_path / "db.sqlite"
+    _write_repositories_db(db_path, [(14, "org/repo", "abc123", "", "")])
+
+    lookup = default_repository_metadata_lookup(str(db_path))
+    assert lookup(999) is None
+
+
+def test_default_repository_metadata_lookup_none_path_always_returns_none():
+    lookup = default_repository_metadata_lookup(None)
+    assert lookup(14) is None
+
+
+def test_default_repository_metadata_lookup_nonexistent_path_returns_none_not_raise(tmp_path):
+    """The exact real-pilot scenario: a configured db_path that does not
+    resolve to an existing file on this execution environment (e.g. a "~"
+    that expands somewhere the sibling pipeline's data isn't) must degrade
+    to "no metadata available", never raise - matching the documented
+    "optional at runtime" contract in config/fix_applicator.yaml."""
+    missing_path = tmp_path / "does-not-exist" / "db.sqlite"
+    lookup = default_repository_metadata_lookup(str(missing_path))
+    assert lookup(14) is None
+
+
+def test_default_repository_metadata_lookup_queries_the_database_only_once(tmp_path, monkeypatch):
+    db_path = tmp_path / "db.sqlite"
+    _write_repositories_db(db_path, [(14, "org/repo", "abc123", "", ""), (99, "org/repo2", "def456", "", "")])
+
+    connect_calls = {"count": 0}
+    real_connect = sqlite3.connect
+
+    def counting_connect(*args, **kwargs):
+        connect_calls["count"] += 1
+        return real_connect(*args, **kwargs)
+
+    monkeypatch.setattr(fix_applicator.sqlite3, "connect", counting_connect)
+
+    lookup = default_repository_metadata_lookup(str(db_path))
+    assert lookup(14)["commit"] == "abc123"
+    assert lookup(99)["commit"] == "def456"
+    assert lookup(14)["commit"] == "abc123"
+
+    assert connect_calls["count"] == 1
+
+
 # --- apply_and_validate: gated paths never touch subprocess -----------------
 
 
@@ -308,6 +462,46 @@ def test_apply_and_validate_commit_checkout_failure(tmp_path):
     )
     assert result["outcome"] == "apply_error"
     assert result["failure_stage"] == "checkout"
+    # a supplied-but-bad commit is never masked as "no commit was provided":
+    # commit_checkout_status stays None (never "skipped_no_commit"), and the
+    # git failure is preserved verbatim, distinguishing this cleanly from
+    # test_apply_and_validate_no_commit_available_is_distinct_from_failure
+    # below.
+    assert result["commit_checkout_status"] is None
+    assert "reference not a tree" in result["diagnostic_message"]
+
+
+def test_apply_and_validate_no_commit_available_is_distinct_from_checkout_failure(tmp_path):
+    """No repository_metadata_lookup at all (or one that finds nothing) is
+    a fundamentally different, non-error situation from a supplied commit
+    that fails to check out - checkout_commit() is never even asked to
+    check out anything, and the notebook still runs against the default
+    branch, exactly as docs/fix-applicator.md documents."""
+    runner = ScriptedDockerRunner(run_container_writes="fixed")
+    result = apply_and_validate(_i4_success(), {8: _i2_row()}, CONFIG, runner=runner, work_dir_base=tmp_path)
+
+    assert result["outcome"] == "fixed"
+    assert result["commit_checkout_status"] == "skipped_no_commit"
+    assert result["failure_stage"] is None
+    assert result["diagnostic_message"] is None
+    assert "no repository metadata lookup was configured" in result["commit_resolution_note"]
+
+
+def test_apply_and_validate_successful_checkout_reports_checked_out(tmp_path):
+    def lookup(repository_id):
+        return {"commit": "1a03b9b88da238d430f577f65c39f4377375edcb"}
+
+    runner = ScriptedDockerRunner(run_container_writes="fixed")
+    result = apply_and_validate(
+        _i4_success(), {8: _i2_row()}, CONFIG, repository_metadata_lookup=lookup, runner=runner, work_dir_base=tmp_path
+    )
+
+    assert result["outcome"] == "fixed"
+    assert result["commit_checkout_status"] == "checked_out"
+    assert result["repository_commit"] == "1a03b9b88da238d430f577f65c39f4377375edcb"
+    assert result["commit_resolution_note"] is None
+    checkout_calls = [c["argv"] for c in runner.calls if c["argv"][:2] == ["git", "checkout"]]
+    assert checkout_calls == [["git", "checkout", "1a03b9b88da238d430f577f65c39f4377375edcb"]]
 
 
 def test_apply_and_validate_docker_build_failure(tmp_path):

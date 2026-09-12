@@ -73,11 +73,32 @@ def format_compatibility_evidence_summary(retrieval_result: Dict[str, Any]) -> s
     return summary
 
 
+# Bounds how many individual warning strings are ever echoed into the LLM
+# prompt. A real distribution can carry hundreds of "unparseable PyPI
+# filename" warnings (e.g. "pandas", which has many legacy Windows .exe/.egg
+# release artifacts) - joining all of them unbounded, as this function used
+# to do, was observed to produce a prompt so dominated by that noise that
+# the model echoed it back as a malformed proposal instead of proposing a
+# fix (see docs/rag-design.md and the i7 real-pilot report). The full,
+# unbounded warnings list is untouched everywhere else - retrieval_result
+# itself, the persisted i4 JSONL record, and repair_attempts.pypi_evidence -
+# this bound applies only to what is rendered into the prompt text.
+MAX_PROMPT_WARNING_SAMPLES = 3
+
+
 def format_warnings(retrieval_result: Dict[str, Any]) -> str:
     warnings = retrieval_result.get("warnings")
     if not warnings:
         return "none"
-    return "; ".join(warnings)
+
+    sample = warnings[:MAX_PROMPT_WARNING_SAMPLES]
+    sample_text = "; ".join(sample)
+    omitted = len(warnings) - len(sample)
+
+    if omitted <= 0:
+        return f"{len(warnings)} warning(s): {sample_text}"
+
+    return f"{len(warnings)} warning(s), showing {len(sample)}: {sample_text}; ... ({omitted} more omitted)"
 
 
 def format_limitations(record: Dict[str, Any]) -> str:

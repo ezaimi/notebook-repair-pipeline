@@ -148,6 +148,15 @@ def render_fix_command(fix_argv: List[str]) -> str:
     return " ".join(fix_argv)
 
 
+def render_fix_commands(fix_argvs: List[List[str]]) -> List[str]:
+    """render_fix_command() over a list of argvs, for the i7 orchestrator's
+    cumulative-round entrypoint (see _render_fix_block() /
+    write_build_context()'s prior_fix_argvs parameter). Order is preserved;
+    any single unsafe argv raises and nothing is written, exactly like a
+    single render_fix_command() call."""
+    return [render_fix_command(argv) for argv in fix_argvs]
+
+
 # --- git -----------------------------------------------------------------
 
 def clone_repository(
@@ -270,7 +279,7 @@ if [ -n "$SETUP_PATHS" ]; then
     done
 fi
 
-echo "[ENTRYPOINT] Applying proposed repair fix"
+{prior_fix_block}echo "[ENTRYPOINT] Applying proposed repair fix"
 echo "[FIX] Running: {fix_command}"
 if {fix_command}; then
     echo "FIX_INSTALL_SUCCESS"
@@ -308,12 +317,54 @@ echo "[ENTRYPOINT] Completed notebook execution"
 """
 
 
-def write_build_context(build_dir: Path, fix_argv: List[str]) -> None:
+def _render_fix_block(command: str, label: str) -> str:
+    return (
+        f'echo "[ENTRYPOINT] {label}"\n'
+        f'echo "[FIX] Running: {command}"\n'
+        f"if {command}; then\n"
+        f'    echo "FIX_INSTALL_SUCCESS"\n'
+        f"else\n"
+        f'    echo "FIX_INSTALL_FAILED"\n'
+        f"    exit 1\n"
+        f"fi\n"
+    )
+
+
+def write_build_context(
+    build_dir: Path,
+    fix_argv: List[str],
+    prior_fix_argvs: Optional[List[List[str]]] = None,
+) -> None:
     """Write Dockerfile + entrypoint.sh into an isolated build_dir (never
     the cloned repository directory - see module docstring, deviation 1).
-    Raises DockerRunnerError without writing anything if fix_argv is not
-    safe to embed."""
+    Raises DockerRunnerError without writing anything if fix_argv (or any
+    of prior_fix_argvs) is not safe to embed.
+
+    `prior_fix_argvs` is the i7 orchestrator's bounded-second-round hook:
+    when a notebook is re-attempted after an earlier round's fix already
+    changed its environment (e.g. Round 2, after Round 1 pinned scipy),
+    each prior round's argv is re-applied, in order, inside this freshly
+    rebuilt container *before* the current `fix_argv` - since no Round 1
+    container survives to be reused (see the module docstring's isolation
+    rationale), "apply the prior fix(es) again in the new container" is
+    the deterministic equivalent of "keep Round 1's repair" without any
+    stateful Docker commit/checkpoint machinery. Every prior argv goes
+    through the exact same render_fix_command() safety check as the
+    primary fix_argv - never a raw LLM string, never a shell-embedded
+    value that hasn't already passed grounding validation. When
+    prior_fix_argvs is None/empty (every caller before i7, and i5's own
+    CLI), the generated entrypoint is byte-identical to the pre-i7
+    single-fix template."""
+    prior_fix_argvs = prior_fix_argvs or []
+    prior_commands = render_fix_commands(prior_fix_argvs)
     fix_command = render_fix_command(fix_argv)
+
+    prior_fix_block = "".join(
+        _render_fix_block(
+            command, f"Applying prior-round repair fix ({position}/{len(prior_commands)})"
+        )
+        for position, command in enumerate(prior_commands, start=1)
+    )
 
     # newline="\n" is required here, not optional: Path.write_text()'s
     # default newline translation on Windows rewrites every "\n" to
@@ -326,7 +377,9 @@ def write_build_context(build_dir: Path, fix_argv: List[str]) -> None:
     build_dir.mkdir(parents=True, exist_ok=True)
     (build_dir / "Dockerfile").write_text(DOCKERFILE_TEMPLATE, encoding="utf-8", newline="\n")
     (build_dir / "entrypoint.sh").write_text(
-        ENTRYPOINT_TEMPLATE.format(fix_command=fix_command), encoding="utf-8", newline="\n"
+        ENTRYPOINT_TEMPLATE.format(fix_command=fix_command, prior_fix_block=prior_fix_block),
+        encoding="utf-8",
+        newline="\n",
     )
 
 

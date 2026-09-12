@@ -231,9 +231,41 @@ def resolve_attempt(
         "notebook_name": notebook_name,
         "repository_url": repository_url,
         "repository_commit": repo_meta.get("commit"),
+        "commit_resolution_note": _describe_missing_commit(
+            repository_id, repository_metadata_lookup, repo_meta
+        ),
         "requirements_paths": _split_paths(repo_meta.get("requirements")),
         "setup_paths": _split_paths(repo_meta.get("setups")),
     }
+
+
+def _describe_missing_commit(
+    repository_id: int,
+    repository_metadata_lookup: Optional[Callable[[int], Optional[Dict[str, Any]]]],
+    repo_meta: Dict[str, Any],
+) -> Optional[str]:
+    """Explain, when `repo_meta` carries no `commit`, exactly why - so a
+    `commit_checkout_status` of "skipped_no_commit" is never a silent,
+    unexplained gap. Returns None once a commit *was* resolved (nothing to
+    explain). This never changes the "skipped_no_commit"/fallback behavior
+    itself (docs/fix-applicator.md "Commit pinning" - a missing commit is
+    still non-fatal); it only makes the reason visible in the result."""
+    if repo_meta.get("commit"):
+        return None
+
+    if repository_metadata_lookup is None:
+        return "no repository metadata lookup was configured; commit pinning unavailable"
+
+    if not repo_meta:
+        return (
+            f"repository metadata lookup returned no data for repository_id={repository_id}; "
+            "repository commit unavailable in source metadata"
+        )
+
+    return (
+        f"repository metadata was found for repository_id={repository_id} "
+        "but it has no recorded commit"
+    )
 
 
 def _validation_error(notebook_execution_id: Any, message: str) -> Dict[str, Any]:
@@ -271,6 +303,7 @@ def _base_attempt_result(notebook_execution_id: Any, run_id: str) -> Dict[str, A
         "notebook_name": None,
         "repository_commit": None,
         "commit_checkout_status": None,
+        "commit_resolution_note": None,
         "failure_stage": None,
         "diagnostic_message": None,
         "elapsed_seconds": None,
@@ -291,10 +324,21 @@ def apply_and_validate(
     runner: docker_runner.Runner = docker_runner.default_runner,
     run_id: Optional[str] = None,
     work_dir_base: Optional[Path] = None,
+    prior_fix_argvs: Optional[List[List[str]]] = None,
 ) -> Dict[str, Any]:
     """Full pipeline for one i4 record: resolve -> (clone -> checkout ->
     build -> run) -> classify -> assemble. Cleanup always runs, on every
-    exit path, via the outer finally block."""
+    exit path, via the outer finally block.
+
+    `prior_fix_argvs` is the i7 orchestrator's bounded-second-round hook
+    (see docker_runner.write_build_context()'s own docstring): when this
+    call represents a Round 2 attempt on a notebook whose Round 1 fix was
+    already validated and applied, pass Round 1's argv(s) here so the
+    freshly rebuilt Round 2 container still carries Round 1's repair
+    before this call's own fix is applied - never a fresh environment with
+    only the Round 2 fix. Every caller before i7, and i5's own CLI, omits
+    this (default None), which is unchanged from the pre-i7 single-fix
+    behavior."""
     run_id = run_id or "i5-{}".format(datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
     start = time.monotonic()
 
@@ -328,6 +372,7 @@ def apply_and_validate(
             "repository_url": attempt["repository_url"],
             "notebook_name": attempt["notebook_name"],
             "repository_commit": attempt["repository_commit"],
+            "commit_resolution_note": attempt.get("commit_resolution_note"),
         }
     )
 
@@ -356,7 +401,7 @@ def apply_and_validate(
                 timeout=execution_cfg.get("checkout_timeout_seconds", 60),
             )
 
-            docker_runner.write_build_context(build_dir, attempt["argv"])
+            docker_runner.write_build_context(build_dir, attempt["argv"], prior_fix_argvs=prior_fix_argvs)
             docker_runner.build_image(
                 build_dir,
                 image_name,

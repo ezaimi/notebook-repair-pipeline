@@ -150,12 +150,18 @@ how each stage was actually built. As of this stage:
         % TODO-FULL-RUN: update after full repair_attempts and knowledge-graph population
         \fullrunupdate{Both have been exercised and checked against real
         pilot data, but neither has yet been run over the complete dataset.}
-  \item Objective O5, full pipeline integration, is \textbf{designed but not
-        yet built}: there is currently no single program that runs all five
-        repair-layer components over the whole dataset automatically.
+  \item Objective O5, full pipeline integration, is \textbf{implemented and
+        validated by a small real pilot}: a single program
+        (\texttt{scripts/run\_pipeline.py}) now runs all five repair-layer
+        components, plus a bounded, max-two-round repair loop, over a given
+        slice of the dataset automatically, sharing one run identifier
+        across every stage it calls.
         % TODO-FULL-RUN: update after full orchestrated dataset execution
-        \fullrunupdate{The benchmark table and the knowledge graph so far
-        hold only pilot-scale records rather than the complete dataset.}
+        \fullrunupdate{It has been run, with real Ollama/PyPI/Docker calls,
+        against a small number of development-split records -- not yet
+        automatically over the whole dataset. The benchmark table and the
+        knowledge graph so far hold only pilot-scale records rather than
+        the complete dataset.}
         \Cref{chap:future-work} states exactly what remains.
   % TODO-FULL-RUN: update once the full evaluation run exists
   \item The validation performed so far is a

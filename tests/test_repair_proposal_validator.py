@@ -85,6 +85,24 @@ def test_json_fenced_in_markdown_is_extracted():
     assert proposal["action"] == "none"
 
 
+def test_fenced_json_with_wrong_schema_is_still_rejected():
+    """Extraction of a markdown-fenced JSON object must never bypass schema
+    validation - a well-formed but incomplete/incorrect object inside a
+    fence is rejected exactly as it would be unfenced."""
+    raw = '```json\n{"action": "install", "install_name": "pandas"}\n```'
+    valid, proposal, errors = parse_and_validate_schema(raw, SCHEMA_PATH)
+    assert valid is False
+    assert proposal is not None  # it did parse as JSON...
+    assert errors  # ...but schema validation still caught the missing fields
+
+
+def test_fenced_json_that_is_not_a_repair_proposal_is_rejected():
+    raw = '```json\n{"error": "Skipping unparseable PyPI filename", "filenames": ["a.exe", "b.exe"]}\n```'
+    valid, proposal, errors = parse_and_validate_schema(raw, SCHEMA_PATH)
+    assert valid is False
+    assert errors
+
+
 def test_json_embedded_in_prose_is_extracted():
     raw = 'Here is my answer: {"action": "none", "install_name": null, "version": null, "rationale": "x"} Hope this helps!'
     valid, proposal, errors = parse_and_validate_schema(raw, SCHEMA_PATH)

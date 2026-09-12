@@ -124,26 +124,42 @@ def call_ollama(
     return response_data.get("response", ""), response_data
 
 
+# Bounds how much of the model's own previous (invalid) response is echoed
+# back into the retry prompt. A malformed response can itself be very long
+# (e.g. the model hallucinating a list of hundreds of filenames instead of
+# a proposal - see docs/rag-design.md and the i7 real-pilot report); echoing
+# it back verbatim only re-exposes the retry attempt to the same noise that
+# produced the invalid response in the first place, rather than clearly
+# steering it toward the required shape.
+MAX_RETRY_ECHO_CHARS = 500
+
+
 def build_retry_prompt(original_prompt: str, invalid_response: str, errors: List[str]) -> str:
+    truncated_response = invalid_response
+    if len(truncated_response) > MAX_RETRY_ECHO_CHARS:
+        truncated_response = truncated_response[:MAX_RETRY_ECHO_CHARS] + " ...[truncated]"
+
     return """The previous response was invalid.
 
 Validation errors:
 {errors}
 
-Previous response:
+Previous response (truncated for brevity):
 {invalid_response}
 
-Return the corrected answer as valid JSON only, with exactly the fields
-action, install_name, version, rationale. Do not add markdown. Do not
-invent a distribution name or version that is not shown in the original
-input record below - if nothing in that record supports a safe repair,
-return action "none" instead.
+Return ONLY the corrected repair JSON object, with exactly this structure
+and no other fields, no markdown, and no extra text:
+{{"action": "install | pin_version | none", "install_name": "... or null", "version": "... or null", "rationale": "..."}}
+
+Do not invent a distribution name or version that is not shown in the
+original input record below - if nothing in that record supports a safe
+repair, return action "none" instead.
 
 Original prompt:
 {original_prompt}
 """.format(
         errors="\n".join("- " + error for error in errors),
-        invalid_response=invalid_response,
+        invalid_response=truncated_response,
         original_prompt=original_prompt,
     )
 
