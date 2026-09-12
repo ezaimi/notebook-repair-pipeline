@@ -37,6 +37,16 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import evaluation_manifest as em  # noqa: E402
 
 
+# Single source of truth for both run_evaluation()'s keyword defaults and
+# the CLI's argparse defaults, so the two can never silently drift apart.
+# DEFAULT_REPOSITORY_METADATA_DB_PATH is the machine-independent default
+# (correct under a native Linux/WSL interpreter); it is never a
+# machine-specific absolute path - see docs/i8-evaluation-methodology.md
+# "Exact-commit requirement" for why the final run instead passes
+# --repository-metadata-db-path pointing at a local, non-UNC copy.
+DEFAULT_FIX_CONFIG = "config/fix_applicator.yaml"
+DEFAULT_REPOSITORY_METADATA_DB_PATH = "~/era/computational-reproducibility-pmc-docker/data/db/db.sqlite"
+
 PipelineInvoker = Callable[[List[str], Path], subprocess.CompletedProcess]
 
 
@@ -138,10 +148,8 @@ def run_evaluation(
     repair_prompt_version: str = "i4_prompt_v1",
     explainer_config: str = "config/llm_explainer.yaml",
     repair_config: str = "config/rag_repair.yaml",
-    fix_config: str = "config/fix_applicator.yaml",
-    repository_metadata_db_path: Optional[str] = (
-        "~/era/computational-reproducibility-pmc-docker/data/db/db.sqlite"
-    ),
+    fix_config: str = DEFAULT_FIX_CONFIG,
+    repository_metadata_db_path: Optional[str] = DEFAULT_REPOSITORY_METADATA_DB_PATH,
     i2_path: str = em.DEFAULT_I2_PATH,
     root: Optional[Path] = None,
     python_executable: Optional[str] = None,
@@ -246,6 +254,25 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("--prompt-strategy", default="few_shot")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument(
+        "--fix-config",
+        default=DEFAULT_FIX_CONFIG,
+        help=(
+            "Path to the FixApplicator config to use (default: %(default)s). Pass "
+            "config/fix_applicator.evaluation.local.yaml for the final evaluation run, "
+            "once that machine-local file points at a validated local metadata DB copy."
+        ),
+    )
+    parser.add_argument(
+        "--repository-metadata-db-path",
+        default=DEFAULT_REPOSITORY_METADATA_DB_PATH,
+        help=(
+            "Path to the upstream Docker pipeline's repository-metadata sqlite DB, recorded "
+            "(with its SHA-256, when accessible) in the manifest (default: %(default)s). Pass "
+            "a genuine local filesystem path (never a machine-specific path committed to source) "
+            "for the final evaluation run - see docs/i8-evaluation-methodology.md."
+        ),
+    )
+    parser.add_argument(
         "--i-understand-this-touches-the-reserved-split",
         dest="allow_evaluation_split",
         action="store_true",
@@ -263,6 +290,8 @@ def main() -> None:
             max_rounds=args.max_rounds,
             model=args.model,
             prompt_strategy=args.prompt_strategy,
+            fix_config=args.fix_config,
+            repository_metadata_db_path=args.repository_metadata_db_path,
             overwrite=args.overwrite,
             allow_evaluation_split=args.allow_evaluation_split,
         )

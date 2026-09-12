@@ -111,6 +111,31 @@ def test_check_repository_metadata_db_existing_file_reports_accessible(tmp_path)
     assert result["accessible"] is True
 
 
+def test_check_repository_metadata_db_records_sha256_when_accessible(tmp_path):
+    db_file = tmp_path / "db.sqlite"
+    db_file.write_bytes(b"some real db bytes")
+    result = em.check_repository_metadata_db(str(db_file))
+    assert result["sha256"] == em.hash_file(db_file)
+
+
+def test_check_repository_metadata_db_sha256_changes_with_content(tmp_path):
+    db_file = tmp_path / "db.sqlite"
+    db_file.write_bytes(b"version one")
+    first = em.check_repository_metadata_db(str(db_file))["sha256"]
+    db_file.write_bytes(b"version two")
+    second = em.check_repository_metadata_db(str(db_file))["sha256"]
+    assert first != second
+
+
+def test_check_repository_metadata_db_sha256_is_none_when_missing():
+    assert em.check_repository_metadata_db(None)["sha256"] is None
+
+
+def test_check_repository_metadata_db_sha256_is_none_when_nonexistent(tmp_path):
+    result = em.check_repository_metadata_db(str(tmp_path / "does_not_exist.sqlite"))
+    assert result["sha256"] is None
+
+
 # --- manifest construction / round-trip ----------------------------------------
 
 def _make_repo_fixture(tmp_path):

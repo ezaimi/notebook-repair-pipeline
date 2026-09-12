@@ -144,14 +144,17 @@ def check_repository_metadata_db(db_path: Optional[str]) -> Dict[str, Any]:
     """Report whether the upstream Docker pipeline's sqlite DB (the source
     of per-repository `commit`/`requirements`/`setups` metadata FixApplicator
     uses for exact-commit checkout) is actually reachable from this
-    environment. This is purely informational at manifest-build time -
-    scripts/fix_applicator.py already degrades gracefully when this DB is
-    absent (see config/fix_applicator.yaml) - but I8's exact-commit
-    preflight check (docs/i8-evaluation-methodology.md) needs this recorded
-    so a broken path is visible in the manifest itself, not only discovered
-    mid-run."""
+    environment, and - when it is - its SHA-256, so the manifest records
+    exactly which snapshot of that DB the run actually used, not merely
+    that some file existed at the configured path. This is purely
+    informational at manifest-build time - scripts/fix_applicator.py
+    already degrades gracefully when this DB is absent (see
+    config/fix_applicator.yaml) - but I8's exact-commit preflight check
+    (docs/i8-evaluation-methodology.md) needs this recorded so a broken
+    path, or an unexpectedly different DB snapshot, is visible in the
+    manifest itself rather than only discovered mid-run."""
     if not db_path:
-        return {"configured_path": None, "accessible": False, "reason": "no db_path configured"}
+        return {"configured_path": None, "accessible": False, "reason": "no db_path configured", "sha256": None}
 
     resolved = Path(db_path).expanduser()
     if not resolved.is_file():
@@ -160,8 +163,15 @@ def check_repository_metadata_db(db_path: Optional[str]) -> Dict[str, Any]:
             "resolved_path": str(resolved),
             "accessible": False,
             "reason": "file not found at resolved path",
+            "sha256": None,
         }
-    return {"configured_path": db_path, "resolved_path": str(resolved), "accessible": True, "reason": None}
+    return {
+        "configured_path": db_path,
+        "resolved_path": str(resolved),
+        "accessible": True,
+        "reason": None,
+        "sha256": hash_file(resolved),
+    }
 
 
 # --- manifest construction ------------------------------------------------
