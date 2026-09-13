@@ -344,13 +344,81 @@ def test_infrastructure_failure_rate():
     assert em.infrastructure_failure_rate(records, 2) == 0.5
 
 
-def test_abstention_rate():
+def test_round1_abstention_rate():
     records = _records_for_five_notebooks()
     trace_with_abstention = em.build_comparison_dataset(
         [make_diagnostics(6, [make_round(1, make_i4(status="abstained", action="none"), None)])], "run-1"
     )
     combined = records + trace_with_abstention
-    assert em.abstention_rate(combined, 6) == 1 / 6
+    assert em.round1_abstention_count(combined) == 1
+    assert em.round1_abstention_rate(combined, 6) == 1 / 6
+
+
+def test_round1_abstention_count_and_round2_abstention_count_are_disjoint():
+    """A notebook that abstains in Round 1 never reaches Round 2 (no
+    round2_trigger can fire from an abstained Round-1 outcome); a notebook
+    that abstains in Round 2 had a real, non-abstained Round-1 attempt
+    that left it still_failing. round1_abstention_count and
+    round2_abstention_count must never double-count the same notebook."""
+    trace = [
+        # Round-1 abstention - never becomes Round-2 eligible.
+        make_diagnostics(1, [make_round(1, make_i4(status="abstained", action="none"), None)]),
+        # Round-1 real attempt (still_failing) -> Round-2 eligible -> Round-2 itself abstains.
+        make_diagnostics(
+            2,
+            [
+                make_round(
+                    1,
+                    make_i4(action="install"),
+                    make_i5("still_failing", same_as_original_error=False, new_error_type="X"),
+                    round2_trigger=triggered(),
+                ),
+                make_round(2, make_i4(status="abstained", action="none", retrieval_status="mapping_unknown"), None),
+            ],
+        ),
+    ]
+    records = em.build_comparison_dataset(trace, "run-1")
+    assert em.round1_abstention_count(records) == 1
+    assert em.round2_abstention_count(records) == 1
+    assert em.final_state_abstention_count(records) == 2
+    assert em.final_state_abstention_rate(records, 2) == 1.0
+
+
+def test_round2_non_attempt_reasons_identifies_mapping_unknown():
+    trace = [
+        make_diagnostics(
+            2,
+            [
+                make_round(
+                    1,
+                    make_i4(action="install"),
+                    make_i5("still_failing", same_as_original_error=False, new_error_type="X"),
+                    round2_trigger=triggered(),
+                ),
+                make_round(2, make_i4(status="abstained", action="none", retrieval_status="mapping_unknown"), None),
+            ],
+        )
+    ]
+    reasons = em.round2_non_attempt_reasons(trace)
+    assert reasons == {"abstained_mapping_unknown": 1}
+
+
+def test_round2_non_attempt_reasons_excludes_real_attempts():
+    trace = [
+        make_diagnostics(
+            174,
+            [
+                make_round(
+                    1,
+                    make_i4(),
+                    make_i5("still_failing", same_as_original_error=False, new_error_type="X"),
+                    round2_trigger=triggered(),
+                ),
+                make_round(2, make_i4(), make_i5("fixed")),
+            ],
+        )
+    ]
+    assert em.round2_non_attempt_reasons(trace) == {}
 
 
 def test_subtype_level_repair_success_uses_actual_run_counts():
@@ -411,14 +479,37 @@ def test_grounding_pass_rate_only_over_schema_valid_proposals():
     assert em.grounding_pass_rate(trace) == 1 / 2
 
 
-def test_end_to_end_valid_grounded_proposal_rate():
+def test_grounded_proposal_rate_among_llm_invocations():
     trace = [
         make_diagnostics(1, [make_round(1, make_i4(status="abstained", schema_valid=False), None)]),
         make_diagnostics(2, [make_round(1, make_i4(status="abstained", schema_valid=True, grounding_valid=False), None)]),
         make_diagnostics(3, [make_round(1, make_i4(status="success", schema_valid=True, grounding_valid=True), make_i5("fixed"))]),
     ]
     # 3 LLM responses total, only 1 both schema-valid and grounded
-    assert em.end_to_end_valid_grounded_proposal_rate(trace) == 1 / 3
+    assert em.grounded_proposal_rate_among_llm_invocations(trace) == 1 / 3
+
+
+def test_overall_grounded_proposal_coverage_rate_denominator_includes_pre_llm_abstentions():
+    trace = [
+        # pre-LLM abstention (mapping_unknown) - schema_validation is None,
+        # never reaches the LLM at all, but IS a repair-agent invocation.
+        make_diagnostics(1, [make_round(1, make_i4(status="abstained", schema_valid=None, retrieval_status="mapping_unknown"), None)]),
+        make_diagnostics(2, [make_round(1, make_i4(status="abstained", schema_valid=False), None)]),
+        make_diagnostics(3, [make_round(1, make_i4(status="success", schema_valid=True, grounding_valid=True), make_i5("fixed"))]),
+    ]
+    # Denominator is ALL i4 attempts (3), not just the 2 that reached the LLM -
+    # this is what distinguishes it from grounded_proposal_rate_among_llm_invocations.
+    assert em.overall_grounded_proposal_coverage_rate(trace) == 1 / 3
+    assert em.grounded_proposal_rate_among_llm_invocations(trace) == 1 / 2
+    # A pipeline that abstains pre-LLM on most records can show a perfect
+    # LLM-conditional rate while overall coverage stays low - verify the two
+    # numbers can genuinely diverge, not just differ by construction above.
+    trace_mostly_pre_llm_abstained = trace + [
+        make_diagnostics(4, [make_round(1, make_i4(status="abstained", schema_valid=None, retrieval_status="mapping_unknown"), None)]),
+        make_diagnostics(5, [make_round(1, make_i4(status="abstained", schema_valid=None, retrieval_status="mapping_unknown"), None)]),
+    ]
+    assert em.grounded_proposal_rate_among_llm_invocations(trace_mostly_pre_llm_abstained) == 1 / 2
+    assert em.overall_grounded_proposal_coverage_rate(trace_mostly_pre_llm_abstained) == 1 / 5
 
 
 # --- explanation coverage -------------------------------------------------------
@@ -439,3 +530,60 @@ def test_compute_all_metrics_uses_manifest_expected_count_not_a_literal():
     report = em.compute_all_metrics(trace, "run-1", expected_record_count=13)
     assert report["expected_record_count"] == 13
     assert report["primary"]["system_level_repair_success_rate"] == 1 / 13
+
+
+def test_compute_all_metrics_round1_and_round2_abstention_counts_sum_to_final_state():
+    """Regression test for the 126-vs-162 ambiguity: whatever
+    round1_abstention_count and round2_abstention_count are on a given
+    trace, they must always sum to final_state_abstention_count (and thus
+    to failure_breakdown()[ic.ABSTAINED]) - the two counts are a partition
+    of the final-state abstention population, never overlapping or
+    incomplete."""
+    trace = [
+        # Round-1 abstention (mapping_unknown before any LLM call).
+        make_diagnostics(1, [make_round(1, make_i4(status="abstained", action="none", retrieval_status="mapping_unknown"), None)]),
+        make_diagnostics(2, [make_round(1, make_i4(status="abstained", action="none", retrieval_status="mapping_unknown"), None)]),
+        # Round-1 real attempt, fixed - no abstention anywhere.
+        make_diagnostics(3, [make_round(1, make_i4(), make_i5("fixed"), round2_trigger=not_triggered())]),
+        # Round-1 real attempt (still_failing) -> Round-2 eligible -> Round-2 abstains (mapping_unknown again).
+        make_diagnostics(
+            4,
+            [
+                make_round(
+                    1,
+                    make_i4(action="install"),
+                    make_i5("still_failing", same_as_original_error=False, new_error_type="X"),
+                    round2_trigger=triggered(),
+                ),
+                make_round(2, make_i4(status="abstained", action="none", retrieval_status="mapping_unknown"), None),
+            ],
+        ),
+        # Round-1 real attempt (still_failing) -> Round-2 eligible -> Round-2 real attempt, fixed.
+        make_diagnostics(
+            5,
+            [
+                make_round(
+                    1,
+                    make_i4(action="install"),
+                    make_i5("still_failing", same_as_original_error=False, new_error_type="X"),
+                    round2_trigger=triggered(),
+                ),
+                make_round(2, make_i4(), make_i5("fixed")),
+            ],
+        ),
+    ]
+    report = em.compute_all_metrics(trace, "run-1", expected_record_count=5)
+    secondary = report["secondary"]
+    assert secondary["round1_abstention_count"] == 2
+    assert secondary["round2_abstention_count"] == 1
+    assert secondary["final_state_abstention_count"] == 3
+    assert secondary["final_state_abstention_count"] == (
+        secondary["round1_abstention_count"] + secondary["round2_abstention_count"]
+    )
+    assert report["failure_breakdown"][ic.ABSTAINED] == 3
+    assert report["round2_summary"]["eligible"] == 2
+    assert report["round2_summary"]["attempted"] == 1
+    assert report["round2_summary"]["abstained"] == 1
+    assert report["round2_summary"]["proposal_generated"] == 1
+    assert report["round2_summary"]["fixed"] == 1
+    assert report["round2_summary"]["non_attempt_reasons"] == {"abstained_mapping_unknown": 1}

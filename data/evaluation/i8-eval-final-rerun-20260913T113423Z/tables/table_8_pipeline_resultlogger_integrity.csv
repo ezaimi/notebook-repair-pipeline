@@ -1,0 +1,5 @@
+metric,value
+expected_record_count,187
+actual_record_count,187
+explanation_schema_validity_rate,0.9893048128342246
+note,run scripts/validate_evaluation_results.py for full ResultLogger/KG integrity checks

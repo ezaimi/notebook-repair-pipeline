@@ -251,13 +251,103 @@ def infrastructure_failure_rate(records: List[Dict[str, Any]], expected_record_c
     return _rate(infra, expected_record_count)
 
 
-def abstention_rate(records: List[Dict[str, Any]], expected_record_count: int) -> Optional[float]:
-    """Round-1 abstention rate. Round 2 can never trigger from an
-    abstained Round 1 (evaluate_round2_trigger() requires Round-1 outcome
-    "still_failing", which an abstained record never has), so Round-1
-    abstention alone is unambiguous here."""
-    abstained = sum(1 for r in records if r["round1_category"] == ic.ABSTAINED)
-    return _rate(abstained, expected_record_count)
+def round1_abstention_count(records: List[Dict[str, Any]]) -> int:
+    """Records where Round 1's own i4 result classified as ABSTAINED -
+    i.e. the repair agent declined to propose anything in Round 1, before
+    any Round 2 could even be considered. Round 2 can never trigger from
+    an abstained Round 1 (evaluate_round2_trigger() requires Round-1
+    outcome "still_failing", which an abstained record never has), so this
+    count is disjoint from round2_abstention_count() by construction."""
+    return sum(1 for r in records if r["round1_category"] == ic.ABSTAINED)
+
+
+def round1_abstention_rate(records: List[Dict[str, Any]], expected_record_count: int) -> Optional[float]:
+    """round1_abstention_count() / expected_record_count. Named explicitly
+    "round1_" (rather than a bare "abstention_rate") because
+    final_state_abstention_rate() below is a DIFFERENT, larger number: it
+    also counts notebooks that only abstained in Round 2, after a real
+    Round-1 attempt left them still_failing. Do not use this name for that
+    quantity, and do not use that quantity for this name."""
+    return _rate(round1_abstention_count(records), expected_record_count)
+
+
+def round2_abstention_count(records: List[Dict[str, Any]]) -> int:
+    """Records where Round 2 actually ran (round2_category is not None -
+    i.e. the notebook was Round-2-eligible) and Round 2's OWN i4 result
+    classified as ABSTAINED: a real second attempt was possible, the
+    repair agent was invoked again, and it declined to propose anything
+    the second time too. Disjoint from round1_abstention_count() - a
+    notebook that abstained in Round 1 never reaches Round 2 at all (see
+    round1_abstention_rate())."""
+    return sum(1 for r in records if r["round2_category"] == ic.ABSTAINED)
+
+
+def final_state_abstention_count(records: List[Dict[str, Any]]) -> int:
+    """Records whose FINAL classification (Round 2's, if Round 2 ran,
+    else Round 1's) is ABSTAINED. Equal to round1_abstention_count() +
+    round2_abstention_count() - the two are disjoint populations (a
+    Round-1 abstention never reaches Round 2; a Round-2 abstention, by
+    definition, did not abstain in Round 1). This is the number
+    failure_breakdown()[ic.ABSTAINED] also reports; exposed directly here
+    so callers/tables don't have to build the whole breakdown dict just to
+    get this one count, and so it sits next to round1_abstention_count for
+    an explicit side-by-side comparison."""
+    return sum(1 for r in records if r["final_category"] == ic.ABSTAINED)
+
+
+def final_state_abstention_rate(records: List[Dict[str, Any]], expected_record_count: int) -> Optional[float]:
+    """final_state_abstention_count() / expected_record_count. Do not
+    confuse with round1_abstention_rate(): this is the larger, post-Round-2
+    figure (see docstrings above)."""
+    return _rate(final_state_abstention_count(records), expected_record_count)
+
+
+def round2_non_attempt_reasons(trace: List[Dict[str, Any]]) -> Dict[str, int]:
+    """Among Round-2-eligible records that did NOT receive a real
+    (i5-completed) Round-2 attempt, tally the exact reason from the raw
+    Round-2 trace entry: i4's own status, and - when it abstained - the
+    specific retrieval_result.status that caused the abstention (e.g.
+    "mapping_unknown"). Answers "why didn't eligible-minus-attempted
+    notebooks get a real second repair?" without assuming the answer is
+    uniformly one thing."""
+    reasons: Dict[str, int] = {}
+
+    def _bump(key: str) -> None:
+        reasons[key] = reasons.get(key, 0) + 1
+
+    for diagnostics in trace:
+        rounds = diagnostics.get("rounds", [])
+        round1_entry = _round_entry(rounds, 1)
+        if round1_entry is None:
+            continue
+        round2_trigger = round1_entry.get("round2_trigger") or {}
+        if not round2_trigger.get("triggered"):
+            continue
+
+        round2_entry = _round_entry(rounds, 2)
+        if _real_attempt(round2_entry) is not None:
+            continue  # a real Round-2 attempt happened - not a non-attempt.
+
+        if round2_entry is None:
+            _bump("no_round2_trace_entry_despite_eligibility")
+            continue
+
+        status = round2_entry.get("status")
+        if status != "completed":
+            _bump(f"round2_entry_status_{status}")
+            continue
+
+        i4_result = round2_entry.get("i4_result") or {}
+        i4_status = i4_result.get("status")
+        if i4_status == "abstained":
+            retrieval_status = (i4_result.get("retrieval_result") or {}).get("status") or "unknown"
+            _bump(f"abstained_{retrieval_status}")
+        elif i4_status == "failed":
+            _bump("infrastructure_failure_llm_or_runtime_fault")
+        else:
+            _bump(f"unrecognized_i4_status_{i4_status!r}")
+
+    return reasons
 
 
 def subtype_level_repair_success(records: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
@@ -331,14 +421,43 @@ def grounding_pass_rate(trace: List[Dict[str, Any]]) -> Optional[float]:
     return _rate(grounded, len(schema_valid))
 
 
-def end_to_end_valid_grounded_proposal_rate(trace: List[Dict[str, Any]]) -> Optional[float]:
+def grounded_proposal_rate_among_llm_invocations(trace: List[Dict[str, Any]]) -> Optional[float]:
     """grounded proposals / LLM repair responses - the composite of
     proposal_validity_rate() and grounding_pass_rate() over the same base
     population, reported only because both stages are already separately
-    available and unambiguous to combine."""
+    available and unambiguous to combine.
+
+    Formerly named "end_to_end_valid_grounded_proposal_rate". That name is
+    misleading: the denominator here is LLM repair responses only (i.e.
+    _llm_repair_responses() - i4 attempts where retrieval actually resolved
+    a candidate and the LLM was invoked), which silently EXCLUDES every
+    notebook that abstained before ever reaching the LLM (mapping_unknown,
+    unsupported subtype, ineligible, etc.). A pipeline that abstains before
+    the LLM on most records can still report 1.0 here while resolving only
+    a small fraction of all repair opportunities - see
+    overall_grounded_proposal_coverage_rate() for that fraction. Use this
+    metric only to answer "when the LLM was actually called, how often did
+    it produce something valid and grounded", never as a stand-in for
+    "what fraction of all repair opportunities got a good proposal"."""
     responses = _llm_repair_responses(_all_i4_results(trace))
     grounded = sum(1 for r in responses if (r.get("grounding_validation") or {}).get("valid"))
     return _rate(grounded, len(responses))
+
+
+def overall_grounded_proposal_coverage_rate(trace: List[Dict[str, Any]]) -> Optional[float]:
+    """grounded proposals / ALL repair-agent (i4) invocations across both
+    rounds - including every pre-LLM abstention (mapping_unknown,
+    unsupported subtype, ineligible, etc.), not just the subset that
+    reached the LLM. This is the genuinely end-to-end figure: "out of
+    every opportunity RAGRepairAgent had to act, in what fraction did it
+    end up producing a schema-valid, grounded, non-none proposal."
+    Attempt-level (both rounds), matching proposal_validity_rate() and
+    grounding_pass_rate()'s own population framing - NOT a per-notebook
+    coverage figure. Always <= grounded_proposal_rate_among_llm_invocations()
+    over the same trace, since its denominator is a superset."""
+    all_i4 = _all_i4_results(trace)
+    grounded = sum(1 for r in all_i4 if (r.get("grounding_validation") or {}).get("valid"))
+    return _rate(grounded, len(all_i4))
 
 
 # --- explanation coverage ---------------------------------------------------
@@ -383,10 +502,15 @@ def compute_all_metrics(
             "targeted_error_resolution_rate": targeted_error_resolution_rate(records),
             "method_only_success_rate": method_only_success_rate(records, expected_record_count),
             "infrastructure_failure_rate": infrastructure_failure_rate(records, expected_record_count),
-            "abstention_rate": abstention_rate(records, expected_record_count),
+            "round1_abstention_count": round1_abstention_count(records),
+            "round1_abstention_rate": round1_abstention_rate(records, expected_record_count),
+            "round2_abstention_count": round2_abstention_count(records),
+            "final_state_abstention_count": final_state_abstention_count(records),
+            "final_state_abstention_rate": final_state_abstention_rate(records, expected_record_count),
             "proposal_validity_rate": proposal_validity_rate(trace),
             "grounding_pass_rate": grounding_pass_rate(trace),
-            "end_to_end_valid_grounded_proposal_rate": end_to_end_valid_grounded_proposal_rate(trace),
+            "grounded_proposal_rate_among_llm_invocations": grounded_proposal_rate_among_llm_invocations(trace),
+            "overall_grounded_proposal_coverage_rate": overall_grounded_proposal_coverage_rate(trace),
             "subtype_level_repair_success": subtype_level_repair_success(records),
             "explanation_schema_validity": explanation_schema_validity_rate(trace),
         },
@@ -394,6 +518,13 @@ def compute_all_metrics(
         "round2_summary": {
             "eligible": sum(1 for r in records if r["round2_eligible"]),
             "attempted": sum(1 for r in records if r["round2_attempted"]),
+            "abstained": round2_abstention_count(records),
+            "proposal_generated": sum(1 for r in records if r["round2_action"] not in (None, "none")),
+            "fixed": sum(1 for r in records if r["round2_category"] == ic.FIXED),
+            "still_failing": sum(1 for r in records if r["round2_category"] == ic.STILL_FAILING),
+            "infrastructure_failure": sum(1 for r in records if r["round2_category"] == ic.INFRASTRUCTURE_FAILURE),
+            "method_failure": sum(1 for r in records if r["round2_category"] == ic.METHOD_FAILURE),
+            "non_attempt_reasons": round2_non_attempt_reasons(trace),
         },
         "comparison_records": records,
     }

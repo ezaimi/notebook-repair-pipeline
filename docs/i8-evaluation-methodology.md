@@ -48,11 +48,53 @@ split only.
   install scikit-learn -> sklearn error gone -> pandas missing).
 - **Method-only Success Rate** = fixed / (expected count - genuine
   infrastructure failures).
-- **Infrastructure Failure Rate**, **Abstention Rate**.
+- **Infrastructure Failure Rate**.
+- **Round-1 Abstention Rate** (`round1_abstention_rate`) = notebooks the
+  repair agent declined to propose anything for **in Round 1**, before any
+  Round 2 could even be considered / expected record count. A Round-2
+  trigger can never fire from an abstained Round-1 outcome
+  (`evaluate_round2_trigger()` requires Round-1 outcome `still_failing`),
+  so this population never overlaps with the next one.
+- **Round-2 Abstention Count** (`round2_abstention_count`) = notebooks
+  that had a real Round-1 attempt leaving them `still_failing`, became
+  Round-2-eligible, and whose Round-2 repair-agent invocation ALSO
+  abstained (same mechanism as Round 1 - typically `mapping_unknown` on
+  whatever new/remaining dependency error Round 2 is now targeting).
+  `round2_summary.non_attempt_reasons` in the full report gives the exact
+  per-reason tally for the eligible-but-not-attempted population this
+  count is drawn from.
+- **Final-state Abstention Count/Rate** (`final_state_abstention_count`,
+  `final_state_abstention_rate`) = `round1_abstention_count` +
+  `round2_abstention_count`: every notebook whose LAST-classified round
+  (Round 2's, if it ran, else Round 1's) was `abstained`. This is the
+  number `failure_breakdown()["abstained"]` / table_5's `abstained` row
+  also report - a strictly LARGER, DIFFERENT population than
+  `round1_abstention_rate` alone whenever `round2_abstention_count > 0`.
+  Never call this plain "abstention rate" without the "final-state"
+  qualifier: doing so is exactly the ambiguity that let a Round-1-only
+  figure (e.g. 126/187) be quoted next to a final-state breakdown's count
+  (e.g. 162/187) as if they were the same number.
 - **Proposal Validity Rate** = schema-valid proposals / LLM repair
   responses (malformed LLM output only).
 - **Grounding Pass Rate** = grounded proposals / schema-valid proposals
   (grounding rejection only - never conflated with the above).
+- **Grounded Proposal Rate Among LLM Invocations**
+  (`grounded_proposal_rate_among_llm_invocations`) = grounded proposals /
+  LLM repair responses - the composite of the two rates above over the
+  same LLM-invoked population. This is conditional: its denominator
+  excludes every notebook that abstained BEFORE the LLM was ever called
+  (`mapping_unknown`, unsupported subtype, ineligible, etc.), so it can
+  read 1.0 even when most repair opportunities never reached the LLM.
+  (Formerly published as `end_to_end_valid_grounded_proposal_rate` - that
+  name is retired because it implied full coverage while actually being
+  conditional; do not reintroduce it.)
+- **Overall Grounded Proposal Coverage Rate**
+  (`overall_grounded_proposal_coverage_rate`) = grounded proposals / ALL
+  repair-agent (i4) invocations across both rounds, pre-LLM abstentions
+  included. This is the genuinely end-to-end figure and will be smaller
+  than the LLM-conditional rate above whenever the pipeline abstains
+  before the LLM on a meaningful share of records. Report both together;
+  neither substitutes for the other.
 - **Subtype-level repair success**, **explanation schema-validity rate**.
 - **Distribution Resolution Accuracy** (once manual labels exist) - no
   Precision@k/Recall@k/MRR/nDCG: `scripts/pypi_retriever.py`'s `retrieve()`
