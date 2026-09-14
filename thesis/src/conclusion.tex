@@ -17,13 +17,14 @@ the Docker pipeline's own residual failures, 200 fall inside this thesis's
 pip-only repair scope. A deterministic classifier decides scope and subtype
 before any language model is involved.
 
-% TODO-FULL-RUN: update after the explanation component has been run over the complete dataset
-\fullrunupdate{An explanation component is designed
+An explanation component is designed
 to turn a raw error message into a plain-language, schema-validated
 description of what went wrong, for every one of the 214 rows, not only the
 repairable ones -- a scope confirmed in a real, committed example
-(\Cref{sec:m-explanation-example}), though the explanation stage has not yet
-been run across the complete dataset.}
+(\Cref{sec:m-explanation-example}). It has since been run across all 200
+repair-scope rows, producing a schema-valid explanation for 185 of the 187
+final evaluation rows; it has not been run on the 14 rows that remain in
+explanation scope but fall outside repair scope.
 
 A repair component proposes a fix using an open, locally-run model whose
 suggestion is checked, field by field, against live PyPI metadata and a
@@ -38,28 +39,39 @@ knowledge-graph mapping re-expresses that record as RDF and links it to the
 notebook it repairs inside the existing FAIR Jupyter knowledge graph. All of
 this is implemented, covered by 332 automated tests.
 
-% TODO-FULL-RUN: update after full orchestrated dataset execution
-\fullrunupdate{It was additionally
+It was additionally
 checked against real PyPI, a real Ollama model, a real Docker daemon, real
 GitHub repositories, and, for the logging and knowledge-graph components,
 the real Morph-KGC mapping engine and the knowledge graph's own source data
--- but only in a small pilot, not yet over the complete dataset.}
+-- first in a small pilot, and then, for the repair layer as a whole, in a
+final evaluation over the complete 187-row evaluation split
+(\Cref{chap:validation}).
 
-That pilot produced one finding worth restating here because it shapes how
-the rest of this project should be read: every real case tried resolved its
-targeted dependency error and then uncovered a second, previously invisible
-one. This is not a weakness of the components built for this thesis --
-their own classification logic is separately proven capable of reporting a
-completely clean result -- but a real characteristic of research notebooks
-that depend on more than one package.
+Both the small pilot and the final evaluation produced the same finding,
+worth restating here because it shapes how the rest of this project should
+be read: a repair attempt that resolves its targeted dependency error often
+uncovers a second, previously invisible one. This is not a weakness of the
+components built for this thesis -- their own classification logic is
+separately proven capable of reporting a completely clean result -- but a
+real characteristic of research notebooks that depend on more than one
+package. Across the final evaluation, 84.9\% of real repair attempts
+resolved the error they targeted, and yet no notebook in the 187-row split
+reached complete recovery within the two-round repair budget: the
+recurring cause was not a bad repair, but a second dependency error the
+first repair had simply not reached yet, together with a package-mapping
+coverage gap (\texttt{mapping\_unknown}) that kept the repair agent from
+even reaching the language model for the majority of its 235 invocations
+across both rounds.
 
-% TODO-FULL-RUN: update after completion of the bounded second repair round
-\fullrunupdate{It is also a direct argument for the
-two-round repair mode, which has since been built and small-pilot-validated
-(\Cref{chap:future-work}): a single repair attempt is often only the first
-of several a real notebook may need. Whether it is worth the extra cost at
-full scale is still an open, unmeasured question -- see the one-round
-versus two-round comparison in \Cref{chap:future-work}.}
+It is also a direct argument for the
+two-round repair mode, which has since been built, small-pilot-validated,
+and exercised at full evaluation scale (\Cref{chap:future-work,chap:validation}):
+a single repair attempt is often only the first of several a real notebook
+may need. In the final evaluation, Round 2 fired for 48 notebooks but fixed
+none of them beyond what Round 1 already had, chiefly because 36 of those
+48 abstained again on the same package-mapping gap. Whether a larger repair
+budget, or better mapping coverage, would change this outcome is still an
+open, unmeasured question.
 
 Several design decisions changed along the way, and \Cref{chap:methodology}
 recorded each one rather than hiding it behind a description that only
@@ -81,20 +93,18 @@ each was made because a concrete implementation problem or a genuine open
 question required it, and each is now covered by a regression test or a
 recorded check.
 
-% TODO-FULL-RUN: rewrite this closing paragraph once orchestration, the full
-% evaluation run, and full-scale knowledge-graph population exist
-\fullrunupdate{What remains is stated plainly in
-\Cref{chap:future-work}: an orchestrator now exists that runs the existing
+An orchestrator connects the existing
 components -- result logging and knowledge-graph enrichment, and the
-bounded two-round repair mode, now included -- together without a person
-driving each attempt by hand, and has been validated by a small real pilot;
-running it unattended over the full dataset is what remains. That full run's
-resulting full-scale population of the
-\texttt{repair\_attempts} table and the FAIR Jupyter knowledge graph, which
-today hold only the pilot-scale records reported in \Cref{chap:validation};
-and the full-scale evaluation -- including a one-round versus two-round
-comparison and a baseline comparison -- that would turn the pilot
-observations in \Cref{chap:validation} into a measured repair success rate.
-Reaching that point does not require redesigning any of the components
-described in this thesis; it requires connecting components that are
-already built, tested, and shown to work correctly on their own.}
+bounded two-round repair mode, included -- without a person
+driving each attempt by hand, and has run unattended over the complete
+187-row evaluation split. Abstaining rather than guessing an unsupported
+package name, and correctly reporting \texttt{still\_failing} on a genuinely
+new error rather than claiming a repair that did not happen, are the
+conservative behaviours this thesis deliberately built into the system, and
+the final evaluation shows both working as intended, at a scale a small
+pilot could not have shown. What remains, as \Cref{chap:future-work}
+states, is enriching the knowledge graph at the same full-evaluation scale,
+and the explanation-quality and baseline comparisons that were always
+planned as follow-on work. None of this requires redesigning any of the
+components described in this thesis; it extends work that is already
+built, tested, and now evaluated.

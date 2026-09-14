@@ -133,44 +133,48 @@ component by component,
 how each stage was actually built. As of this stage:
 
 \begin{itemize}
-  \item Objectives O1, O2, and O3 are \textbf{implemented and tested}: a
+  \item Objectives O1, O2, and O3 are \textbf{implemented and evaluated}: a
         classification and explanation component, a PyPI-grounded repair
         proposal component, and a fix-application-and-re-execution component
-        all exist as working, unit-tested code.
-        % TODO-FULL-RUN: update after full orchestrated dataset execution
-        \fullrunupdate{Each has additionally been exercised against real
-        external systems (a real Ollama model, the real PyPI registry, a
-        real Docker daemon, and real GitHub repositories) only in a small
-        pilot, not yet over the complete dataset.}
+        all exist as working, unit-tested code, and have since been run
+        together, unattended, over the full 187-row evaluation split
+        described in \Cref{chap:problem-dataset}, using a real Ollama model,
+        the real PyPI registry, and a real Docker daemon throughout. No
+        notebook in this split reached completely successful re-execution
+        within the two-round repair budget, but 84.9\% of the 73 real
+        repair attempts made across both rounds removed the specific
+        dependency error they targeted, and every language-model repair
+        response obtained during the run was schema-valid and PyPI-grounded.
+        \Cref{chap:validation} reports this evaluation in full.
   \item Objectives O4 and O6 -- the reusable benchmark dataset and
         knowledge-graph enrichment -- are \textbf{implemented and validated
         at pilot scale}: a result-logging component persists one row per
         repair attempt to a SQLite table, and an RDF mapping links each
-        logged attempt into the existing FAIR Jupyter knowledge graph.
-        % TODO-FULL-RUN: update after full repair_attempts and knowledge-graph population
-        \fullrunupdate{Both have been exercised and checked against real
-        pilot data, but neither has yet been run over the complete dataset.}
+        logged attempt into the existing FAIR Jupyter knowledge graph. The
+        benchmark table has since been populated at the scale of the full
+        evaluation run above; enriching the knowledge graph from that larger
+        run, rather than from the pilot sample checked in
+        \Cref{sec:v-i6}, remains future work.
   \item Objective O5, full pipeline integration, is \textbf{implemented and
-        validated by a small real pilot}: a single program
-        (\texttt{scripts/run\_pipeline.py}) now runs all five repair-layer
+        evaluated at full scale}: a single program
+        (\texttt{scripts/run\_pipeline.py}) runs all five repair-layer
         components, plus a bounded, max-two-round repair loop, over a given
         slice of the dataset automatically, sharing one run identifier
-        across every stage it calls.
-        % TODO-FULL-RUN: update after full orchestrated dataset execution
-        \fullrunupdate{It has been run, with real Ollama/PyPI/Docker calls,
-        against a small number of development-split records -- not yet
-        automatically over the whole dataset. The benchmark table and the
-        knowledge graph so far hold only pilot-scale records rather than
-        the complete dataset.}
+        across every stage it calls. Beyond the small real pilot that first
+        validated this orchestrator (\Cref{sec:v-i7}), it has now driven the
+        complete 187-row evaluation run referenced above.
         \Cref{chap:future-work} states exactly what remains.
-  % TODO-FULL-RUN: update once the full evaluation run exists
-  \item The validation performed so far is a
-        \textbf{small, real-system pilot}, not the thesis's final
-        evaluation.
-        \fullrunupdate{It shows that each component behaves correctly against
-        real data, including the result-logging and knowledge-graph
-        components; it does not yet measure an overall repair success rate
-        across the dataset. That measurement is planned future work.}
+  \item The evaluation reported in \Cref{chap:validation} is the
+        thesis's final evaluation, not only a pilot: it covers the complete
+        187-row evaluation split, once, under the same configuration
+        throughout. It measures an overall repair success rate together
+        with the diagnostic metrics needed to interpret it -- the rate at
+        which individual targeted dependency errors were resolved, the rate
+        at which the repair agent could reach the language model at all
+        given its current package-mapping coverage, and the rate of
+        infrastructure faults unrelated to repair quality. \Cref{chap:validation}
+        reports each of these in turn, together with what they do and do
+        not show about the system.
 \end{itemize}
 
 This distinction between what has been implemented and validated, and what
@@ -190,6 +194,7 @@ data they exchange. \Cref{chap:methodology} is the core of the thesis: it
 explains, component by component, how each part was actually built, the
 decisions made along the way, and where the implementation ended up
 differing from the original design. \Cref{chap:validation} reports the
-automated test suite and the real-system pilot results obtained so far.
-\Cref{chap:future-work} separates what is finished from what remains.
+automated test suite, the real-system pilot results obtained during
+implementation, and the final evaluation over the full 187-row evaluation
+split. \Cref{chap:future-work} separates what is finished from what remains.
 \Cref{chap:conclusion} closes the thesis with a summary of the contribution.

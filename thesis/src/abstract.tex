@@ -12,11 +12,12 @@ repair scope defined for this first version of the system. Given a failed
 notebook, a deterministic classifier decides its subtype and repair
 eligibility before any language model is consulted.
 
-% TODO-FULL-RUN: update after the explanation component has been run over the complete dataset
-\fullrunupdate{An explanation component is designed to produce a
-plain-language, schema-validated description of the failure for every
-classified record, independent of whether it can later be repaired; it has
-not yet been run over the complete dataset.}
+An explanation component produces a plain-language, schema-validated
+description of the failure for every classified record, independent of
+whether it can later be repaired; it has now been run across all 200
+repair-scope rows (the 13-row development split and the 187-row evaluation
+split), where it produced a schema-valid explanation for 185 of the 187
+evaluation records.
 
 A repair component proposes a concrete
 fix using an open,
@@ -30,37 +31,42 @@ failing, or not meaningfully testable.
 
 All of these components are implemented and covered by 332 automated tests.
 
-% TODO-FULL-RUN: update after full orchestrated dataset execution
-\fullrunupdate{Each has additionally been checked in a small pilot against
-real external systems: the live PyPI registry, a real local language model,
-a real Docker daemon, and real GitHub repositories. This pilot shows that
-each component behaves correctly against its relevant real external system,
-and surfaces a recurring pattern in the dataset: a targeted repair reliably
-removes the specific error it addresses, but a notebook that depends on
-several packages often then reveals a second, previously hidden dependency
-problem further along. Neither the pilot's scope nor this pattern has yet
-been confirmed across the complete dataset.}
+Beyond this component-level testing, the complete repair layer was run
+once, unattended, over the reserved 187-row evaluation split, using a real
+local language model, the live PyPI registry, and a real Docker daemon
+throughout. No notebook in this split reached completely successful
+re-execution within the two-round repair budget, but this is not the same
+as saying no repair worked: 84.9\% of the 73 real repair attempts made
+(across both rounds) removed the specific dependency error they targeted,
+and every one of the 73 language-model repair responses obtained during
+the run produced a schema-valid, PyPI-grounded proposal. The gap between
+these two numbers has two main causes. First, the repair agent's static
+import-to-distribution mapping only covered enough failing modules to reach
+the language model for 73 of 235 repair-agent invocations across both
+rounds (31.1\%); the remaining invocations abstained beforehand rather than
+guess an unsupported package name. Second, resolving one dependency error
+frequently exposed a second, previously hidden one, and the bounded,
+two-round repair budget was not always enough to clear all of them within
+the same notebook.
 
-A result-logging component now joins the classification, explanation, and
+A result-logging component joins the classification, explanation, and
 repair records these components already produce into one persistent record
 per repair attempt, stored in a SQLite benchmark table, and an RDF mapping
 re-expresses that record and links it to the existing FAIR Jupyter knowledge
-graph.
-
-% TODO-FULL-RUN: update after full repair_attempts and knowledge-graph population
-\fullrunupdate{Both were executed against real, pilot-scale data and
-checked directly: the mapping produces syntactically valid RDF that links
-correctly to existing notebook resources, but neither has yet been
-populated from a full run.}
+graph. Both were checked directly against real, pilot-scale data: the
+mapping produces syntactically valid RDF that links correctly to existing
+notebook resources. The benchmark table has since been populated at the
+scale of the full 187-row evaluation run; enriching the knowledge graph from
+that larger run, rather than from the pilot sample, remains future work.
 
 All 214 dependency-error
 records were confirmed to share notebook identifiers with the inspected
 knowledge-graph source data.
 
-% TODO-FULL-RUN: rewrite once full orchestration and the full evaluation run exist
-\fullrunupdate{This thesis reports work completed through
-this implementation stage. Full orchestration of the pipeline over the
-complete dataset, population of the benchmark table and knowledge graph
-from a full run rather than a pilot sample, and a full-scale evaluation of
-repair success remain future work and are stated as such, rather than
-presented as already measured.}
+This thesis reports work completed through a full evaluation of the
+repair layer over the reserved 187-row evaluation split, including a
+Round-1-versus-final comparison drawn from that same run. Full-scale
+enrichment of the knowledge graph from this evaluation run, an
+explanation-quality user study, and a baseline comparison against a
+non-grounded repair agent remain future work and are stated as such, rather
+than presented as already measured.

@@ -130,7 +130,7 @@ rows and \textbf{14 excluded} rows.
     \hline
     \texttt{dev} & 13 & Used to design and manually sanity-check the explanation and repair prompts (\Cref{chap:methodology}). \\
     \hline
-    \texttt{evaluation} & 187 & Usable rows reserved for the eventual full-scale repair evaluation (\Cref{chap:future-work}); not yet run at the time of writing. \\
+    \texttt{evaluation} & 187 & Usable rows reserved for the final repair evaluation, reported in \Cref{chap:validation}. \\
     \hline
     \texttt{excluded} & 14 & Within explanation scope; excluded from automated repair (\Cref{sec:pd-explanation-scope}). \\
     \hline
@@ -139,12 +139,13 @@ rows and \textbf{14 excluded} rows.
   \label{tab:pd-splits}
 \end{table}
 
-% TODO-FULL-RUN: update after full 187-row evaluation
-\fullrunupdate{It is important not to read the 187-row \texttt{evaluation}
-split as already evaluated. Splitting the data this way only
-\emph{reserves} those rows for a later, controlled repair run; at the
-implementation stage this thesis reports, that run has not yet happened
-(\Cref{chap:future-work}).}
+The 13-row \texttt{dev} split was used exclusively during implementation, to
+design and manually sanity-check the explanation and repair prompts and to
+run the small real-system pilots reported in \Cref{chap:validation}. The
+187-row \texttt{evaluation} split was kept untouched until the implementation
+described in \Cref{chap:methodology} was complete, and was then run once,
+without further changes to any component, to produce the final results
+reported in \Cref{chap:validation}.
 
 \subsection{Explanation Scope Is Wider Than Repair Scope}
 \label{sec:pd-explanation-scope}
@@ -202,11 +203,9 @@ FAIR Jupyter run (\Cref{sec:pd-l1}: 6,576 dependency-related failures out of
 entire set. It operates on a precisely defined, much smaller residual
 subset: the 214 dependency-error rows still present after the newer Docker
 pipeline's containerisation, of which 200 fall inside the pip-only v1 repair
-scope and 13 of those were used only for prompt design, leaving 187 rows
-reserved for a full evaluation.
-
-% TODO-FULL-RUN: update after full 187-row evaluation
-\fullrunupdate{That full evaluation has not yet been run.}
+scope. Of those 200 rows, 13 were used only for prompt design and small
+real-system pilots, and the remaining 187 were reserved for the final
+repair evaluation reported in \Cref{chap:validation}.
 
 Keeping these numbers
 distinct throughout the rest of this thesis avoids overstating what has

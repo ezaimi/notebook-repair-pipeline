@@ -10,16 +10,14 @@ model, a real Docker daemon, real GitHub repositories, and, for the
 result-logging and knowledge-graph components, the real Morph-KGC mapping
 engine and the FAIR Jupyter knowledge graph's own source data.
 
-% TODO-FULL-RUN: update after final orchestrated dataset execution
-\fullrunupdate{The pilots reported through most of this chapter each
+The pilots reported through most of this chapter each
 exercise one component's own stages against its relevant real external
-system in isolation. \Cref{sec:v-i7} reports a further, later pilot that
-drives several components together, unattended, in one unattended run via
-the now-implemented orchestrator (\Cref{sec:orchestrator}) -- still over a
-small number of records, not the full dataset. Neither kind of evidence is
-the thesis's final evaluation, which requires running the full 187-row
-evaluation split described in \Cref{chap:problem-dataset}, and that full
-evaluation run has not yet been performed (\Cref{chap:future-work}).}
+system in isolation. \Cref{sec:v-i7} reports a further pilot that
+drives several components together, unattended, in one run via
+the orchestrator (\Cref{sec:orchestrator}), still over a
+small number of records. \Cref{sec:v-final-eval} then reports the thesis's
+final evaluation: the same orchestrator, unchanged, run once over the
+complete 187-row evaluation split described in \Cref{chap:problem-dataset}.
 
 \section{Automated Testing}
 \label{sec:v-testing}
@@ -223,19 +221,19 @@ next one, which was simply invisible until that point. The conservative
 correctly distinguished "a different, new problem" from "the fix did not
 work" in every one of these cases.
 
-% TODO-FULL-RUN: update after full evaluation and, if built, the second repair round
-\fullrunupdate{No completely clean \texttt{fixed} outcome
-has yet been produced, despite a pilot deliberately designed to find one.
-This is stated plainly rather than minimised: a clean outcome remains
+No completely clean \texttt{fixed} outcome
+was produced by this pilot, despite it being deliberately designed to find
+one. This is stated plainly rather than minimised: a clean outcome remains
 achievable in principle on a single-dependency notebook. The two-round
-repair mode that would feed a \texttt{still\_failing} result's new error
-back into a second repair attempt has since been built and demonstrated for
+repair mode that feeds a \texttt{still\_failing} result's new error
+back into a second repair attempt was demonstrated for
 real on exactly cases 1 and 2 above (\Cref{sec:v-i7}); in both real
 attempts the second round correctly triggered and correctly abstained
-rather than proposing anything ungrounded -- it has not yet produced a
-second \emph{successful} repair on real data, only a correctly-handled
-abstention. \Cref{chap:future-work} discusses what a full-scale run would
-still need to show one.}
+rather than proposing anything ungrounded. \Cref{sec:v-final-eval} reports
+that this same pattern -- a real repair removing its targeted error, but the
+notebook remaining unfixed because a second, previously hidden problem
+takes its place -- recurs throughout the full 187-row evaluation split, and
+not only in this small pilot.
 
 \section{Result Logging and Knowledge-Graph Implementation Validation}
 \label{sec:v-i6}
@@ -308,11 +306,13 @@ This validates that the mapping produces syntactically valid RDF for real
 data, links correctly to existing notebook resources for the records
 tested, and handles a missing value and the PROV-O time literal correctly.
 
-% TODO-FULL-RUN: update once the knowledge graph is populated from a full run
-\fullrunupdate{It is, again, a pilot check against a small, real sample
-assembled for this purpose, not a run over the complete dataset.
-\Cref{chap:future-work} states what a full-scale population of the
-knowledge graph from this mapping still requires.}
+It is, again, a pilot check against a small, real sample
+assembled for this purpose, not a run over the complete dataset. The
+\texttt{repair\_attempts} table itself has since been populated at the scale
+of the full 187-row evaluation split (\Cref{sec:v-final-eval}); running this
+same, unchanged RML mapping over that larger table to enrich the knowledge
+graph accordingly has not been done as part of this evaluation, and
+\Cref{chap:future-work} states what it still requires.
 
 \section{Orchestrator Implementation Validation}
 \label{sec:v-i7}
@@ -364,52 +364,579 @@ assumed from the code. Each round produced its own, separate
 \texttt{repair\_attempts} row (\Cref{sec:m-resultlogger}), never collapsed
 into one.
 
-% TODO-FULL-RUN: update once a real Round 2 attempt succeeds and after full orchestrated dataset execution
-\fullrunupdate{Neither real Round 2 attempt produced a successful second
+Neither real Round 2 attempt in this small pilot produced a successful second
 repair -- both triggered correctly and abstained correctly, for two
 different, genuine reasons, rather than either being forced to succeed.
-A real case demonstrating a full two-round \emph{success} has not yet been
-found; \Cref{chap:future-work} discusses what a full-scale run over the
-evaluation split would still need to show one. The controlled, mocked test
+The controlled, mocked test
 suite (\Cref{chap:methodology}) separately proves the second-round
 mechanism itself -- trigger conditions, the cumulative environment, the
 shared run identifier, and the two-round cap -- works correctly end to end
 when RAGRepairAgent does propose and FixApplicator does apply a Round 2
-fix; only a real Round 2 \emph{success} on real dataset data remains
-unobserved.}
+fix. \Cref{sec:v-final-eval} reports how the second round behaved across
+the full evaluation split: Round 2 fired for 48 notebooks, produced a real
+second repair proposal for 12 of them, and, as in this pilot, none of those
+12 second attempts produced a completely clean \texttt{fixed} result
+either.
 
-\section{Summary: Implementation Validation, Not Final Evaluation}
+\section{Final Evaluation on the Reserved Evaluation Split}
+\label{sec:v-final-eval}
+
+Every result reported so far in this chapter comes from a small, hand-picked
+pilot: a handful of records chosen to exercise one component, or the whole
+orchestrator, against a real external system. This section reports the
+opposite kind of evidence: the complete repair layer, unchanged from the
+implementation described in \Cref{chap:methodology}, run once, unattended,
+over every one of the 187 rows in the reserved \texttt{evaluation} split
+(\Cref{chap:problem-dataset}), against a real Ollama model, the live PyPI
+registry, and a real Docker daemon throughout. This is the thesis's final
+evaluation.
+
+\subsection{Evaluation Design}
+\label{sec:v-final-design}
+
+The orchestrator was invoked once, with a two-round repair budget
+(\texttt{max\_rounds = 2}), over all 187 evaluation rows. For every
+notebook, Round 1 is evaluated first. Round 2 is attempted only when Round 1
+actually reached FixApplicator, came back \texttt{still\_failing}, and the
+newly exposed error, once reclassified by the same classifier used for every
+original row, is itself pip-repair-eligible. When Round 2 is attempted, it
+runs the same RAGRepairAgent and FixApplicator components, targeting only
+the newly exposed error, inside the container as Round 1 left it.
+
+As explained in \Cref{sec:orchestrator}, Round 1 and Round 2 are not two
+separate experiments: both conditions are read from the same run, so that
+Ollama's non-zero sampling temperature cannot turn ordinary run-to-run
+variation into an apparent Round-2 effect. The comparison that follows is
+therefore between the outcome after Round 1 and the final outcome after up
+to two rounds of the same execution, never between two independently
+sampled runs.
+
+Each of the 187 rows represents a notebook execution that had already been
+observed to fail with a dependency error before this evaluation began.
+Re-executing a notebook after a repair can expose a dependency error that
+was not visible in the original dataset row, simply because execution now
+reaches further into the notebook than it did before; \Cref{sec:v-final-interpretation}
+returns to what this means for interpreting the results below.
+
+\subsection{Primary Repair Results}
+\label{sec:v-final-primary}
+
+Full notebook recovery -- a notebook re-executing from beginning to end with
+no error -- was not achieved for any evaluation notebook, in either round.
+Round-1 repair success is 0/187 (0\%), and the final success rate after up
+to two rounds is likewise 0/187 (0\%). Round 2 fixed no additional notebook
+beyond what Round 1 had already fixed, for an absolute improvement of 0
+percentage points. This is stated plainly and is not softened: no
+evaluation notebook reached completely successful execution within the
+maximum two-round repair budget defined for this system.
+
+This does not mean that the repair actions themselves did nothing.
+\Cref{sec:v-final-targeted} reports what actually happened at the level of
+individual repair attempts, which is a different, and considerably more
+informative, question than whether a notebook was fully recovered.
+
+\subsection{Targeted Dependency-Error Resolution}
+\label{sec:v-final-targeted}
+
+Full notebook recovery requires every dependency problem in a notebook to be
+absent after re-execution. A narrower, attempt-level question is whether the
+one dependency error a given repair attempt specifically targeted was itself
+removed -- regardless of whether the notebook went on to fail on something
+else. A repair attempt counts as resolving its targeted error when the
+notebook becomes \texttt{fixed}, or when it remains \texttt{still\_failing}
+but the original error is gone and the conservative
+\texttt{same\_as\_original\_error} check (\Cref{chap:methodology}) confirms
+that the notebook progressed to a genuinely new, different error.
+
+Across the 73 real FixApplicator attempts made in this evaluation (61 in
+Round 1, 12 in Round 2), 62 resolved the error they targeted: a targeted
+dependency-error resolution rate of 84.9\% (62/73). This is an attempt-level
+figure, not a notebook-level one, and it should not be confused with the
+0\% full-recovery figure above. Although no notebook completed successfully
+within two rounds, the large majority of individual repair attempts did
+remove the specific dependency error they addressed; re-execution then
+frequently exposed a subsequent failure, which is exactly the pattern
+already observed at pilot scale in \Cref{sec:v-key-observation} and traced
+through one real record in \Cref{sec:m-worked-example}.
+
+\subsection{Abstention: Round 1, Round 2, and Final State}
+\label{sec:v-final-abstention}
+
+A large share of the 187 evaluation rows never reached a repair attempt at
+all, because RAGRepairAgent deliberately declined to propose one. This is
+abstention, and it is a distinct outcome from an infrastructure fault or a
+failed repair: the system does not generate an unsupported fix when it
+lacks grounded package information, rather than guessing.
+
+In Round 1, 126 of the 187 rows (67.4\%, the Round-1 abstention rate) were
+abstained on. Every one of these 126 cases has the same cause: PyPI
+retrieval returned \texttt{mapping\_unknown}, meaning RAGRepairAgent's
+static import-to-distribution mapping (\Cref{chap:methodology}) could not
+resolve the failing import to a supported PyPI package. In all 126 cases,
+the language model was never called -- the abstention happens one layer
+before it, at retrieval.
+
+Round 2 does not simply repeat this figure. Of the 187 rows, 48 had a real
+Round-1 attempt that came back \texttt{still\_failing} on a newly exposed,
+repair-eligible error, and were therefore eligible for a second round.
+Table~\ref{tab:v-final-round2} shows what happened to those 48. Only 12
+received an actual second repair proposal and a real second FixApplicator
+attempt; the remaining 36 abstained again, and, as in Round 1, every one of
+these 36 abstentions is a \texttt{mapping\_unknown} case -- the newly exposed
+error's import name had no entry in the package mapping either.
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{|p{4.0cm}|r|p{6.5cm}|}
+    \hline
+    \textbf{Stage} & \textbf{Count} & \textbf{Meaning} \\
+    \hline
+    Round-2 eligible & 48 & Round 1 reached FixApplicator, came back \texttt{still\_failing}, and the newly exposed error is itself repair-eligible. \\
+    \hline
+    Round-2 proposal generated & 12 & RAGRepairAgent reached the language model and produced a proposal for the newly exposed error. \\
+    \hline
+    Round-2 abstained (\texttt{mapping\_unknown}) & 36 & Retrieval could not resolve the newly exposed error's import name; the model was never called. \\
+    \hline
+    Round-2 FixApplicator attempts & 12 & Every generated proposal was applied and the notebook re-executed. \\
+    \hline
+    Round-2 fixed & 0 & No second attempt produced a completely clean result. \\
+    \hline
+    Round-2 still failing & 12 & Every attempted second repair left the notebook failing on some error. \\
+    \hline
+  \end{tabular}
+  \caption{What happened to the 48 Round-2-eligible notebooks. Round-2
+  eligibility does not by itself mean a second repair was applied: for
+  three of every four eligible notebooks, package resolution abstained
+  before RAGRepairAgent could propose anything.}
+  \label{tab:v-final-round2}
+\end{table}
+
+Combining both rounds, 162 of the 187 evaluation rows (86.6\%) ended in
+abstention as their final classification: the 126 Round-1 abstentions plus
+the 36 Round-2 abstentions above. This thesis reports these two figures
+separately, as the Round-1 abstention rate (67.4\%) and the final-state
+abstention rate (86.6\%), rather than under one undifferentiated "abstention
+rate," because they answer different questions: the first is how often the
+very first repair attempt could not proceed past package resolution, and the
+second is how often a notebook ended the entire two-round process without
+ever receiving a proposal. Every one of the 162 final-state abstentions,
+in both rounds, has the same underlying cause -- \texttt{mapping\_unknown} --
+which points at package-mapping coverage, not at the language model or at
+the grounding logic, as the dominant reason a repair attempt never happened.
+
+\subsection{Proposal Quality and Proposal Coverage}
+\label{sec:v-final-proposal}
+
+RAGRepairAgent was invoked, across both rounds, 235 times (187 in Round 1,
+48 in Round 2). Of those invocations, 73 reached the point of actually
+calling the language model; the remaining 162 abstained beforehand for the
+\texttt{mapping\_unknown} reason described above. Of the 73 responses the
+model produced, all 73 passed schema validation, and all 73 of those also
+passed grounding validation against the retrieved PyPI evidence. In other
+words, whenever RAGRepairAgent's own retrieval step supplied it with a
+resolved candidate distribution, the model's proposal was schema-valid and
+grounded without exception: a proposal validity rate of 100\% (73/73), a
+grounding pass rate of 100\% (73/73 schema-valid proposals), and a grounded
+proposal rate among LLM invocations of 100\% (73/73).
+
+These three figures are conditional on the language model having actually
+been called, and none of them should be read as a statement about overall
+proposal coverage. Counting every one of the 235 repair-agent invocations,
+including the 162 that abstained before reaching the model, only 73 ended
+in a grounded proposal: an overall grounded proposal coverage rate of 31.1\%
+(73/235). The contrast between these two figures is central to interpreting
+this system: its output is reliable whenever it produces one at all, but the
+static package-mapping coverage that decides whether the model is called in
+the first place is the binding constraint on how often it gets that chance.
+
+\subsection{Infrastructure Failures}
+\label{sec:v-final-infra}
+
+Two of the 187 evaluation rows (1.1\%) ended in an infrastructure failure --
+an environment or tooling fault, unrelated to repair quality, that prevented
+a fair trial of the method (\Cref{chap:methodology}). These are reported
+separately from abstentions, method failures, and \texttt{still\_failing}
+outcomes, and are not counted against the repair method itself, following
+the same infrastructure-versus-method distinction already applied throughout
+the pilots earlier in this chapter.
+
+\subsection{Final Outcome Breakdown}
+\label{sec:v-final-breakdown}
+
+Table~\ref{tab:v-final-outcomes} summarises the final classification of
+every one of the 187 evaluation rows, combining every figure reported above
+into one place.
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{|l|r|r|}
+    \hline
+    \textbf{Final category} & \textbf{Count} & \textbf{Share of 187} \\
+    \hline
+    \texttt{fixed} & 0 & 0.0\% \\
+    \hline
+    \texttt{still\_failing} & 22 & 11.8\% \\
+    \hline
+    \texttt{abstained} (126 Round 1 + 36 Round 2) & 162 & 86.6\% \\
+    \hline
+    \texttt{infrastructure\_failure} & 2 & 1.1\% \\
+    \hline
+    \texttt{method\_failure} & 1 & 0.5\% \\
+    \hline
+    \texttt{excluded} & 0 & 0.0\% \\
+    \hline
+    \textbf{Total} & \textbf{187} & \textbf{100\%} \\
+    \hline
+  \end{tabular}
+  \caption{Final classification of all 187 evaluation rows, after up to two
+  repair rounds.}
+  \label{tab:v-final-outcomes}
+\end{table}
+
+\subsection{Results by Subtype}
+\label{sec:v-final-subtype}
+
+Split by the subtype recorded during classification (\Cref{chap:methodology}),
+full notebook recovery is 0/169 (0\%) for \texttt{missing\_package} and 0/18
+(0\%) for \texttt{wrong\_version}, the two subtypes within repair scope
+(\Cref{chap:problem-dataset}). This full-recovery figure should be read
+together with, not instead of, the attempt-level targeted-error resolution
+rate reported in \Cref{sec:v-final-targeted}: a 0\% full-recovery rate for a
+subtype does not mean individual repairs of that subtype's errors were
+ineffective, only that no notebook containing one was left completely
+error-free within the two-round budget.
+
+\subsection{Manual Validation of the Classifier}
+\label{sec:v-final-classifier}
+
+To check ErrorClassifier's output against ground truth rather than only
+against its own internal logic, a stratified sample of 49 records was frozen
+before this evaluation was run and labelled by hand: all 10 records the
+classifier had assigned \texttt{system\_library} and all 4 it had assigned
+\texttt{mapping\_unknown} (the two subtypes excluded from repair scope), plus
+20 of the records it had assigned \texttt{missing\_package} and 15 it had
+assigned \texttt{wrong\_version}, drawn primarily from the evaluation split.
+
+On the binary scope decision (usable versus excluded), the classifier scored
+33 true positives, 2 false positives, 0 false negatives, and 14 true
+negatives against the manual labels, for an accuracy of 95.9\%, a precision
+of 94.3\%, a recall of 100\%, and an F1 score of 97.1\%. On the four-way
+subtype decision, 45 of the 49 sample rows matched the manual label exactly,
+a naive accuracy of 91.8\%. This figure describes the classifier's accuracy
+on this deliberately stratified sample, which oversamples the two rarer,
+excluded subtypes; it is reported as sample-level accuracy, not as a
+population-wide estimate, since doing the latter without an independent
+estimate of each subtype's true share of the full 214-row dataset would mean
+using the classifier's own output to validate itself.
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{|l|r|r|r|}
+    \hline
+    \textbf{Subtype} & \textbf{Precision} & \textbf{Recall} & \textbf{F1} \\
+    \hline
+    \texttt{missing\_package} & 0.800 & 1.000 & 0.889 \\
+    \hline
+    \texttt{wrong\_version} & 1.000 & 0.882 & 0.938 \\
+    \hline
+    \texttt{system\_library} & 1.000 & 1.000 & 1.000 \\
+    \hline
+    \texttt{mapping\_unknown} & 1.000 & 0.667 & 0.800 \\
+    \hline
+  \end{tabular}
+  \caption{Per-subtype precision, recall, and F1 on the 49-record manual
+  validation sample.}
+  \label{tab:v-final-classifier}
+\end{table}
+
+Finally, the extracted failing-module name matched the manually confirmed
+name exactly for all 49 sample rows (100\%). Extraction accuracy is reported
+as an exact-match rate rather than as precision/recall/F1, since the space
+of possible module names is unbounded and a confusion matrix over it would
+not be meaningful.
+
+\subsection{Manual Validation of PyPI Distribution Resolution}
+\label{sec:v-final-pypi}
+
+A separate, small diagnostic sample of 20 import names -- covering every
+name already present in the package mapping and the most frequently
+exercised names that are not -- was manually checked against the real PyPI
+registry. Of the 20, 17 were names a human reviewer could confidently
+resolve to one specific distribution or confirm as unresolvable; the
+remaining 3 were left unresolved intentionally, because no single correct
+distribution could be determined by hand either. Against those 17
+manually resolvable cases, RAGRepairAgent's retrieval step resolved the
+correct distribution in 7 (41.2\%).
+
+This is a small, diagnostic sample, not a population-wide measurement of
+package-resolution accuracy, and it is not presented as one. It is,
+however, consistent with the abstention results in
+\Cref{sec:v-final-abstention}: a package-mapping mechanism that resolves
+fewer than half of a manually checked, deliberately diagnostic sample of
+import names is the kind of coverage gap that would be expected to produce
+a high \texttt{mapping\_unknown} abstention rate at full evaluation scale,
+which is what was observed. This is offered as a consistent interpretation
+of two independent pieces of evidence, not as proof that one caused the
+other.
+
+\subsection{Interpreting the Result: Why Zero Full Recoveries Does Not Mean Zero Repairs Worked}
+\label{sec:v-final-interpretation}
+
+Taken together, the results above show a system that behaves reliably at
+the one stage that could be checked directly against ground truth --
+every proposal the language model actually produced was schema-valid and
+grounded -- but whose end-to-end repair coverage is limited by two separate
+factors well before that stage is reached. Package-mapping coverage decides
+whether RAGRepairAgent gets to call the model at all: on this evaluation
+split, it did so for less than a third of all repair-agent invocations,
+and abstained the rest of the time rather than guess a package name it
+could not ground. Cascading dependency errors decide whether a notebook
+that does receive a repair becomes fully runnable: fixing one import
+frequently exposes a second, previously hidden one, and the bounded,
+two-round repair budget defined for this system was not always enough to
+clear every such error in the same notebook.
+
+Neither factor is a defect in a single component. RAGRepairAgent's
+abstention on \texttt{mapping\_unknown} is the deliberate, conservative
+behaviour described in \Cref{chap:methodology}: refusing to act on
+insufficient evidence rather than producing an unsupported suggestion.
+FixApplicator's classification of a notebook as \texttt{still\_failing} on a
+different error is likewise working exactly as designed
+(\Cref{sec:v-key-observation}). The 0\% full-recovery result for this
+evaluation split is the joint outcome of these two conservative, individually
+correct behaviours operating within a bounded repair budget, not evidence
+that the language model failed to produce useful repairs: it did, in 84.9\%
+of the attempts it was actually given.
+
+The results do not support a stronger claim than this. No notebook in the
+evaluation split is shown to have needed more than two dependency errors in
+total, nor is it shown that every notebook needed exactly two; some
+Round-1 \texttt{still\_failing} outcomes were not even eligible for Round 2,
+because the newly exposed error fell outside repair scope. The only claim
+these results support directly is the one stated in
+\Cref{sec:v-final-primary}: no evaluation notebook achieved complete
+successful execution within the two-round repair budget evaluated here.
+
+\section{Human Evaluation of Explanation Quality: Study Design}
+\label{sec:v-human-eval}
+
+\Cref{sec:v-final-eval} showed that LLMExplainer produced a schema-valid
+explanation for 185 of the 187 evaluation rows. Schema validity is a
+necessary check, but it is not the same claim as objective~O1: that the
+explanation is written in plain language a non-expert reader can actually
+follow (\texttt{NFR2}). Whether an explanation is understandable,
+sufficiently detailed, and useful is a judgment only a human reader can
+make, not something an automated schema check can establish. This section
+reports the design of a small human evaluation built to close that gap. As
+with the final evaluation, the design is reported separately from its
+results: at the time of writing, the study has been fully designed and its
+materials prepared, but it has not yet been administered to any
+participant, and no response data exists.
+
+\subsection{Instrument: An Adapted Explanation Satisfaction Scale}
+\label{sec:v-human-eval-instrument}
+
+Rather than devising a new questionnaire, this evaluation adapts a
+published instrument: the Explanation Satisfaction Scale of Hoffman
+et al.~\cite{hoffman2023measures}, a seven-item, 1--5 Likert scale for
+collecting a user's own judgment of an explanation after they have read
+it, as distinct from an expert's a priori judgment of an explanation's
+designed-in properties (for which the same paper proposes a separate
+Explanation Goodness Checklist, not used here). Six of the seven original
+items are retained, each adapted only in its domain reference -- for
+example, "From the explanation, I know how the [tool] works" becomes
+"From this explanation, I understand why the notebook failed." The
+seventh original item, which asks whether the explanation "tells me how
+to use" the system, is excluded: LLMExplainer is deliberately barred from
+suggesting what to do about a failure, since deriving a repair is
+RAGRepairAgent's separate responsibility
+(\Cref{sec:m-explanation-role}), so that item does not correspond to
+anything this component is meant to provide. The retained item closest to
+the original scale's accuracy question -- "This explanation seems
+correct, based on the error shown" -- is reported throughout as
+\emph{perceived correctness}, never as technical, objective, or factual
+correctness: a participant's rating reflects only how correct the
+explanation appears to the reader, not a verification against the
+notebook's true root cause. Objective correctness is not measured by this
+study at all.
+
+The alternative System Causability Scale of Holzinger
+et al.~\cite{holzinger2020scs} was considered and not adopted. Its ten
+items presuppose an interactive explanation interface with an adjustable
+level of detail, comparison across multiple explanations, and references
+to domain-specific artefacts such as clinical guidelines -- properties of
+an interactive, expert-facing medical decision-support tool that do not
+apply to a single, static, plain-language explanation of one dependency
+error.
+
+All six retained items use the same 1--5 scale (1 = strongly disagree,
+2 = disagree, 3 = neither agree nor disagree, 4 = agree, 5 = strongly
+agree) after every example, so ratings stay comparable across the study.
+
+\subsection{Participants}
+
+Participants need only general programming experience; familiarity with
+Python and Jupyter Notebooks is desirable but not required, and no
+machine-learning or explainable-AI expertise is required, since the
+explanations are written in plain language for exactly this audience
+(\texttt{NFR2}). A short background section records self-reported general
+programming experience, Python familiarity, Jupyter Notebook familiarity,
+and prior experience with dependency/package errors -- kept deliberately
+brief, and collecting no name, email, or other identifying information.
+The target is 15--20 participants, a convenience sample sized for a
+descriptive Master's-thesis study, not for a population-level claim.
+
+\subsection{Example Pool: Diversity-Constrained Stratified Sampling}
+\label{sec:v-human-eval-pool}
+
+Twelve examples are drawn from the frozen 187-row evaluation split, never
+from the 13-row development split (part of which is already quoted
+verbatim elsewhere in this thesis, \Cref{sec:m-explanation-example}), and
+never from five evaluation-split notebook\_execution\_ids already used in
+earlier explanation-only development activity. Sampling is stratified by
+subtype, but not forced into an equal split -- a design choice best
+described as \emph{diversity-constrained stratified sampling}: the number
+of examples drawn per subtype is bounded by how many genuinely distinct
+error signatures exist in the eligible population, not fixed in advance.
+Checking the eligible \texttt{wrong\_version} population directly showed
+only three distinct (failing module, error message) signatures across all
+18 eligible rows -- most of its records share one of two repeated numpy or
+SciPy compatibility messages, which would produce near-duplicate
+explanation text if sampled further. All three distinct signatures are
+included, once each. The remaining nine pool positions are drawn from
+\texttt{missing\_package}, whose eligible population supports far more
+diversity (41 distinct failing modules across 162 eligible rows), giving
+nine examples with nine different failing modules and no repeated
+content. The result is \textbf{9 missing\_package and 3 wrong\_version}
+examples, not a 6/6 split, and this composition is reported as such rather
+than described as balanced. Because the pool contains nine distinct
+\texttt{missing\_package} cases but only three distinct
+\texttt{wrong\_version} cases, any subtype-level comparison in the
+resulting data is explicitly descriptive: participants may contribute
+several ratings of the three \texttt{wrong\_version} cases, but that does
+not make them equivalent in diversity to nine distinct
+\texttt{wrong\_version} explanations.
+
+Selection used a fixed random seed (42) over alphabetically sorted
+candidate lists, never consulted repair outcome, Round-2 status, or any
+other automated-evaluation result, and is fully reproducible from the
+frozen final-evaluation trace (\texttt{scripts/select\_human\_evaluation\_pool.py}).
+
+Each participant rates 6 of the 12 pooled examples, assigned through four
+fixed survey variants (\Cref{tab:v-human-eval-variants}) constructed so
+that every one of the 12 examples appears in exactly two of the four
+variants -- balanced exposure without needing a shared "anchor" example.
+Participants are assigned variants by simple round robin as they are
+recruited, and the presentation order of the 6 examples within a
+participant's variant is randomized.
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{|l|p{9.5cm}|}
+    \hline
+    \textbf{Variant} & \textbf{Notebook execution IDs (6 examples)} \\
+    \hline
+    A & 62, 79, 94, 118, 172, 163 \\
+    \hline
+    B & 62, 79, 94, 211, 252, 175 \\
+    \hline
+    C & 118, 211, 282, 398, 197, 163 \\
+    \hline
+    D & 172, 252, 282, 398, 175, 197 \\
+    \hline
+  \end{tabular}
+  \caption{The four balanced survey variants. Every one of the 12 pooled
+  examples appears in exactly two variants.}
+  \label{tab:v-human-eval-variants}
+\end{table}
+
+\subsection{Procedure}
+
+For each assigned example, a participant sees only the original error type
+and error message, and the generated explanation's \texttt{summary},
+\texttt{root\_cause}, \texttt{evidence}, and \texttt{limitations} fields,
+rendered as plain text -- never as raw JSON, and never edited from what
+the model actually produced. Nothing else is shown: not the repository
+name, not any source code, not \texttt{explanation\_confidence}, and not
+whether the notebook was ever repaired, whether a Round~2 attempt fired,
+or any other outcome from the final evaluation. Outcome information is
+withheld specifically because it could bias a participant's judgment of
+the explanation itself, which is the only thing this study measures. The
+same six items (\Cref{sec:v-human-eval-instrument}) are asked after every
+example, in the same order, followed, once, by two optional open-text
+questions asking what was unclear or missing and what would make the
+explanations more helpful -- supplementary qualitative feedback, not part
+of the validated scale.
+
+\subsection{Planned Analysis}
+
+For each of the six items, the plan is to report the number of responses,
+median, interquartile range, the full 1--5 frequency distribution, and the
+percentage rating 4 or 5, computed overall, by subtype, and per example.
+No inferential significance test is planned, and no claim beyond this
+specific sample of participants and examples is intended. Cronbach's
+alpha is planned as a \emph{supplementary internal-consistency} statistic
+only: it would describe whether the six adapted items tend to move
+together in the collected data, not whether different participants agree
+with each other (that is a separate question this design does not
+address), and not whether the six items in fact measure one single
+construct. A high alpha would not by itself justify collapsing the six
+items into one composite "explanation quality score," and no such
+composite is computed by default; item-level results remain the primary
+output regardless of the alpha value obtained.
+
+\subsection{Limitations of This Design}
+
+Three limitations are stated plainly rather than discovered later. First,
+participants judge a rendered error message and explanation, not the
+original notebook and its surrounding code, so a genuinely different
+impression might emerge with fuller context. Second, the diversity
+constraint on \texttt{wrong\_version} means the study can describe, but
+not statistically compare, perceived quality across the two subtypes with
+equal confidence. Third, a convenience sample of 15--20 participants
+supports a descriptive characterization of how this specific group
+perceived this specific system's explanations, not a claim generalizable
+to programmers at large.
+
+\section{Chapter Summary}
 \label{sec:v-summary}
 
-% TODO-FULL-RUN: update after full orchestrated dataset execution
-\fullrunupdate{The results in this chapter show that every implemented
-component -- error classification, explanation, PyPI-grounded repair
-proposal generation, fix application with re-execution, and result logging
-into both the SQLite benchmark table and the FAIR Jupyter knowledge graph --
-was exercised against its relevant real external system at pilot scale and
-behaved correctly there, not only against mocked fixtures.}
+This chapter reported several different kinds of evidence, in increasing order
+of scale. The automated test suite (\Cref{sec:v-testing}) shows that every
+implemented component -- error classification, explanation, PyPI-grounded
+repair proposal generation, fix application with re-execution, and result
+logging into both the SQLite benchmark table and the FAIR Jupyter knowledge
+graph -- behaves as designed against controlled, mocked inputs. The
+component-by-component pilots (\Cref{sec:v-i4,sec:v-i5,sec:v-i6}) and the
+small orchestrator pilot (\Cref{sec:v-i7}) then showed that each of those
+components, and the orchestrator that connects them, also behaves correctly
+against its relevant real external system -- a real Ollama model, the live
+PyPI registry, a real Docker daemon, real GitHub repositories, and the real
+Morph-KGC mapping engine -- and surfaced concrete, fixable problems (a
+timeout set too low, two missing package mappings, three
+environment-specific bugs) that only a real pilot could have found.
 
-They also surfaced
-concrete, fixable problems (a timeout set too low, two missing package
-mappings, three environment-specific bugs) that only a real pilot could have
-found.
+\Cref{sec:v-final-eval} then reported the thesis's final evaluation: the
+same, unmodified repair layer run once over the complete 187-row evaluation
+split. No evaluation notebook reached full recovery within the two-round
+repair budget (0/187), but 84.9\% of the 73 real repair attempts made
+resolved the dependency error they specifically targeted, and every one of
+the 73 proposals the language model actually produced was schema-valid and
+grounded. Repair coverage was limited well before that point: a
+\texttt{mapping\_unknown} package-resolution gap accounted for all 162
+final-state abstentions (126 in Round 1, a further 36 in Round 2), leaving
+only 73 of 235 repair-agent invocations (31.1\%) reaching the language model
+at all. Two rows (1.1\%) ended in an infrastructure failure, kept separate
+from these method-level figures throughout.
 
-% TODO-FULL-RUN: update after full orchestrated dataset execution
-\fullrunupdate{Most of this is component-by-component pilot validation;
-\Cref{sec:v-i7} additionally reports a small pilot run of the orchestrator
-described in \Cref{chap:architecture,chap:future-work}, which does now
-drive several components together, unattended, in one pass -- over a
-handful of records, not the full dataset.}
-
-% TODO-FULL-RUN: rewrite once the full 187-row evaluation and knowledge-graph population exist
-\fullrunupdate{What these results do \emph{not} show is an
-overall repair success rate, or a knowledge graph populated at full scale.
-Five real cases, or four PyPI names, or four repair proposals is not a
-sample large enough to support a general claim about how often this system
-repairs a dependency error, and this thesis makes no such claim; the repair
-attempts logged and enriched so far are the same small pilot records, not
-the full dataset. That question, and the full-scale population of the
-\texttt{repair\_attempts} table and the knowledge graph, both require
-running the full 187-row evaluation split (\Cref{chap:problem-dataset})
-under a controlled, orchestrated run, which is described as remaining work
-in \Cref{chap:future-work}.}
+What this evaluation does not show is a repair success rate for the whole
+214-row dataset, since 14 rows fall outside pip-only repair scope by design
+(\Cref{chap:problem-dataset}), or a knowledge graph enriched at the same
+scale as the evaluation run: the \texttt{repair\_attempts} table now holds
+one row per Round-1 and Round-2 attempt from the full evaluation split, but
+running the existing RML mapping over that larger table and a baseline
+comparison against a non-grounded repair agent remain future work, as
+\Cref{chap:future-work} describes. \Cref{sec:v-human-eval} reports one
+further piece of evidence this chapter adds: a human evaluation of
+explanation quality, whose design is now finalized and whose materials are
+prepared, but which has not yet been administered to any participant.

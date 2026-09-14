@@ -303,28 +303,34 @@ The orchestrator iterates over the target rows and runs the components in
 order: classify, explain, repair, apply, log. Three properties are fixed
 at this level.
 
-% TODO-FULL-RUN: update after full orchestrated dataset execution
-\fullrunupdate{The orchestrator described below is now implemented
-(\texttt{scripts/run\_pipeline.py}) and validated by a small real pilot run
-against real Ollama, PyPI, and Docker, recorded in the accompanying
-implementation documentation (\texttt{docs/pipeline-orchestrator.md}) --
-not the full 200-row usable set. Each of ErrorClassifier through ResultLogger exists,
-is independently tested, and is called by the orchestrator exactly as
-described below, including the bounded two-round feedback mode described
-later in this section. What remains is the full 200-row usable-set
-run itself, the resulting one-round-vs-two-round comparison, and full
-benchmark/knowledge-graph population from it -- \Cref{chap:future-work}.
-Result logging and knowledge-graph enrichment were already implemented
-before the orchestrator (\Cref{sec:m-resultlogger}) and are unchanged by
-it; the orchestrator only calls them.}
+The orchestrator described below is implemented
+(\texttt{scripts/run\_pipeline.py}), first validated by a small real pilot
+run against real Ollama, PyPI, and Docker (recorded in the accompanying
+implementation documentation, \texttt{docs/pipeline-orchestrator.md}), and
+since run over the complete 187-row evaluation split, again against real
+Ollama, PyPI, and Docker throughout (\Cref{chap:validation}). Each of
+ErrorClassifier through ResultLogger exists, is independently tested, and is
+called by the orchestrator exactly as described below, including the
+bounded two-round feedback mode described later in this section. The
+Round-1-versus-final comparison this run produces is reported in
+\Cref{chap:validation}; full-scale knowledge-graph population from it
+remains future work (\Cref{chap:future-work}). Result logging and
+knowledge-graph enrichment were already implemented before the orchestrator
+(\Cref{sec:m-resultlogger}) and are unchanged by it; the orchestrator only
+calls them.
 
 \paragraph{Round switch.}
 The default is a single repair round. In two-round mode, if the outcome is
 \texttt{still\_failing}, the new error is fed back to the RAGRepairAgent
 once more and the resulting fix is re-applied before the attempt is
 logged. This feedback structure follows the re-execution-driven repair of
-ChatRepair~\cite{xia2024chatrepair};
-the one- versus two-round comparison is the subject of the ablation study.
+ChatRepair~\cite{xia2024chatrepair}. Rather than running the evaluation split
+twice, once per mode, and risking that the language model's non-zero
+sampling temperature turns ordinary run-to-run variation into an apparent
+Round-2 effect, the evaluation reads both conditions from a single
+two-round run: the Round-1 outcome is never re-sampled, only carried
+forward or extended by Round 2. \Cref{chap:validation} reports the
+resulting Round-1-versus-final comparison.
 
 \paragraph{Failure isolation (NFR4).}
 Every attempt is logged, even when a component itself errors -- malformed

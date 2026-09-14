@@ -8,10 +8,11 @@ draft of this chapter, have since been implemented and validated at pilot
 scale (\Cref{sec:m-resultlogger,sec:v-i6}); full pipeline orchestration,
 shared run-level metadata, and the bounded second repair round -- also
 listed as remaining work in an earlier draft -- have likewise since been
-implemented and validated by a small real pilot (see below). What is
-listed here is what none of that work yet covers: running any of it,
-unattended, over the full dataset, and the evaluation work that depends on
-having done so. Confirmed by direct inspection rather than assumed.
+implemented, validated by a small real pilot, and run unattended over the
+complete 187-row evaluation split (\Cref{sec:v-final-eval}). What is listed
+here is what that evaluation run does not yet cover: enriching the
+knowledge graph at the same scale, and the further evaluation work that
+still depends on it. Confirmed by direct inspection rather than assumed.
 
 \section{Remaining Implementation}
 
@@ -19,14 +20,15 @@ having done so. Confirmed by direct inspection rather than assumed.
 describes an orchestrator that loops over every usable row, running
 classification, explanation, repair, fix application, and result logging
 in sequence and logging every attempt, including ones where a component
-itself fails. This loop is now implemented (\texttt{scripts/run\_pipeline.py})
-and exercised end to end, with real Ollama, PyPI, and Docker calls, against
-a small number of development-split records -- not yet the full 200-row
-usable set (see "Full-Dataset Population" and "Full Evaluation Run"
-below). Every component it calls -- ResultLogger included -- is called
-through its existing, unmodified interface; building the orchestrator
-required no redesign of any of them, only the two small, backwards-compatible
-plumbing additions described next and in \Cref{chap:architecture}.
+itself fails. This loop is implemented (\texttt{scripts/run\_pipeline.py})
+and has been run, with real Ollama, PyPI, and Docker calls throughout, over
+all 200 usable rows: the 13-row development split during implementation,
+and, unattended, the complete 187-row evaluation split for the final
+evaluation reported in \Cref{sec:v-final-eval}. Every component it calls --
+ResultLogger included -- is called through its existing, unmodified
+interface; building the orchestrator required no redesign of any of them,
+only the two small, backwards-compatible plumbing additions described next
+and in \Cref{chap:architecture}.
 
 \paragraph{Shared Run-Level Metadata -- implemented.} The orchestrator
 generates a single \texttt{run\_id} (shaped \texttt{i7-<UTC timestamp>}, or
@@ -52,97 +54,115 @@ the original one), and re-applies Round 1's already-validated fix inside
 the freshly rebuilt Round 2 container before applying Round 2's own fix,
 so the notebook is re-executed against "original environment + Round 1 +
 Round 2," not "original environment + Round 2 only." \texttt{repair\_attempts.round}
-can now be \texttt{2}, and is, for the small pilot rows this chapter's
-"Full-Dataset Population" paragraph describes; a full second round only
-fires when the reclassified new error is itself pip-repair-eligible, which
-a real pilot case (\Cref{chap:validation}) showed is not guaranteed even
-when the new error is a genuine, different \texttt{missing\_package}
-failure -- see that chapter for what was actually observed.
+is \texttt{2} for 48 rows in the final evaluation run
+(\Cref{sec:v-final-abstention}); a full second round only fires when the
+reclassified new error is itself pip-repair-eligible, which the final
+evaluation confirms is not guaranteed: of those 48 Round-2-eligible
+notebooks, 36 abstained again on \texttt{mapping\_unknown} and only 12
+received an actual second repair attempt (\Cref{sec:v-final-abstention}).
 
 \paragraph{Full-Dataset Population of the Benchmark Table and Knowledge
 Graph.} ResultLogger, the CSV export, and the RML mapping
 (\Cref{sec:m-resultlogger}) are implemented and validated against real
-pilot data (\Cref{sec:v-i6}), and the orchestrator that would drive them
-over the full dataset now exists too, but none of them has been run over
-the complete 200-row usable set. The \texttt{repair\_attempts} table and
-the knowledge-graph triples derived from it currently hold only the small
-number of pilot records reported in \Cref{chap:validation}, not the full
-dataset. Populating them at full scale is now only a matter of invoking the
-orchestrator above over every usable row, not of building anything further.
+pilot data (\Cref{sec:v-i6}). The \texttt{repair\_attempts} table has since
+been populated at the scale of the full 187-row evaluation run, holding one
+row per Round-1 attempt and one further row per Round-2 attempt
+(\Cref{sec:v-final-eval}) -- 235 rows in total. Running the existing RML
+mapping over this larger table to enrich the knowledge graph at the same
+scale, rather than from the pilot sample checked in \Cref{sec:v-i6}, has not
+been done and remains the one part of this item still outstanding.
 
 \section{Remaining Evaluation}
 
-\paragraph{Full Evaluation Run.} The pilots in \Cref{chap:validation} cover
-fewer than ten records in total. The 187-row evaluation split reserved in
-\Cref{chap:problem-dataset} has not been run. The orchestrator needed to do
-so now exists (see above) and is deliberately defaulted away from that
-split during development to avoid consuming it prematurely; running it is
-now a matter of invoking that orchestrator 187 times with
-\texttt{-{}-split evaluation}, which has not been done.
+\paragraph{Full Evaluation Run -- done.} The pilots in \Cref{chap:validation}
+covered fewer than ten records in total. The 187-row evaluation split
+reserved in \Cref{chap:problem-dataset} has since been run once, unattended,
+under the orchestrator's two-round mode, against real Ollama, PyPI, and
+Docker throughout. \Cref{sec:v-final-eval} reports the results: 0/187 full
+notebook recoveries, an 84.9\% targeted-error resolution rate across 73 real
+repair attempts, and a 162-row final-state abstention count, almost
+entirely attributable to package-mapping coverage rather than to the
+language model or the grounding logic.
 
-\paragraph{One-Round versus Two-Round Comparison.} Comparing repair success
-with and without the second repair round requires running the
-now-implemented orchestrator's two-round mode over the full evaluation
-split above and comparing it against a one-round run over the same split;
-neither run has been performed yet.
+\paragraph{Round-1-versus-Final Comparison -- done.} Comparing repair
+success with and without the second repair round was carried out as a
+paired comparison drawn from the single evaluation run above, rather than
+from two independent runs, to avoid Ollama's non-zero sampling temperature
+turning ordinary run-to-run variation into an apparent Round-2 effect
+(\Cref{sec:orchestrator,sec:v-final-design}). The result is that Round 2
+fixed no additional notebook beyond what Round 1 had already fixed: an
+absolute improvement of 0 percentage points, for the reasons discussed in
+\Cref{sec:v-final-interpretation}.
 
-\paragraph{Explanation Quality Evaluation.} The project plan includes a
-user study with Likert-scale scoring of explanation quality and a Cohen's
-kappa analysis of agreement between raters. This has not started; it
-depends on having a stable set of generated explanations to show
-participants, which \Cref{chap:validation} shows exists only for a handful
-of pilot rows so far.
+\paragraph{Explanation Quality Evaluation -- designed, not yet conducted.}
+The project plan originally anticipated a Likert-scale user study together
+with a Cohen's kappa analysis of agreement between raters. The kappa
+statistic does not fit the design that was actually worked out: it
+requires exactly two raters judging identical categorical items, not
+ordinal 1--5 ratings collected from 15--20 participants who each see a
+different subset of examples. \Cref{sec:v-human-eval} reports the
+finalized design in its place: a questionnaire adapted from the
+Explanation Satisfaction Scale of Hoffman et al.~\cite{hoffman2023measures},
+administered over a frozen, diversity-constrained sample of explanations
+from the final evaluation run (\Cref{sec:v-final-eval}), with Cronbach's
+alpha retained as a supplementary internal-consistency check rather than a
+rater-agreement statistic. The questionnaire, the example pool, and the
+response/analysis tooling are prepared (\texttt{docs/human-explanation-evaluation-questionnaire.md},
+\texttt{data/human-evaluation/}, \texttt{scripts/analyze\_human\_explanation\_evaluation.py}),
+but the study has not yet been administered to any participant, and no
+response data exists.
 
 \paragraph{Baseline Comparison.} Comparing this system's repair success
 rate against a baseline (for example, a version of the repair agent without
-PyPI grounding) requires the full evaluation run above to exist first, so
-the two can be compared on the same rows.
+PyPI grounding) can now reuse the same 187-row evaluation split and the same
+metrics reported in \Cref{sec:v-final-eval}, but the baseline system itself
+has not been built, and the comparison has not been carried out.
 
 \paragraph{Benchmark Dataset Finalisation.} Objective O4 calls for
 publishing the completed \texttt{repair\_attempts} table as a reusable
 benchmark. The table's schema, population logic, and knowledge-graph
-mapping are implemented and validated (\Cref{sec:m-resultlogger,sec:v-i6});
-publishing it as a finished benchmark still requires the full-dataset
-population above, which is the last step in the chain, since it depends on
-every step before it.
+mapping are implemented and validated (\Cref{sec:m-resultlogger,sec:v-i6}),
+and the table itself is now populated at the scale of the full 187-row
+evaluation run (\Cref{sec:v-final-eval}); publishing it as a finished
+benchmark still requires enriching the knowledge graph at that same scale,
+which remains the one outstanding step in this chain.
 
 \section{Summary}
 
-% TODO-FULL-RUN: revisit every row of this table once the full evaluation
-% run and full-scale knowledge-graph population are complete
 \Cref{tab:future-summary} separates what this thesis reports as done from
 what remains, to avoid any ambiguity.
 
 \begin{table}[h]
   \centering
-  \begin{tabular}{|p{7.2cm}|l|}
+  \begin{tabular}{|p{7.2cm}|p{5.8cm}|}
     \hline
     \textbf{Item} & \textbf{Status} \\
     \hline
     Dataset preparation, classification, explanation, PyPI-grounded repair
       proposal generation, fix application and re-execution &
-      Implemented, tested, pilot-validated \\
+      Implemented, tested, evaluated on 187 rows \\
     \hline
-    Result logging (SQLite) and knowledge-graph enrichment (RML mapping) &
-      Implemented, tested, pilot-validated \\
+    Full pipeline orchestration, incl.\ shared run-level metadata, and the
+      bounded second repair round &
+      Implemented, tested, evaluated on 187 rows \\
     \hline
-    Full pipeline orchestration, incl.\ shared run-level metadata &
-      Implemented, tested, small-real-pilot-validated \\
+    Full evaluation run (187-row split) & Done (\Cref{sec:v-final-eval}) \\
     \hline
-    Bounded second repair round & Implemented, tested, small-real-pilot-validated \\
+    Round-1-versus-final comparison & Done (\Cref{sec:v-final-eval}) \\
     \hline
-    Full-dataset population of \texttt{repair\_attempts} and the knowledge graph &
-      Not started \\
+    Result logging (SQLite): population &
+      Done at full evaluation scale (235 rows, \Cref{sec:v-final-eval}) \\
     \hline
-    Full evaluation run (187-row split) & Not started \\
+    Knowledge-graph enrichment (RML mapping) &
+      Implemented, tested, pilot-validated; not run over the full
+      evaluation-scale \texttt{repair\_attempts} table \\
     \hline
-    One-round vs.\ two-round comparison & Not started \\
-    \hline
-    Explanation quality evaluation (user study, Cohen's kappa) & Not started \\
+    Explanation quality evaluation (human user study) &
+      Designed and prepared (\Cref{sec:v-human-eval}); not yet conducted \\
     \hline
     Baseline comparison & Not started \\
     \hline
-    Benchmark dataset finalisation & Not started \\
+    Benchmark dataset finalisation & Depends on knowledge-graph enrichment above \\
     \hline
   \end{tabular}
   \caption{Completed work versus remaining work, at the time of writing.}

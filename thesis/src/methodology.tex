@@ -18,8 +18,9 @@ above together, unattended, in one pass -- is not covered component-by-component
 in this chapter, since it calls each component exactly as this chapter
 describes it rather than reimplementing any of them; it is addressed
 directly in \Cref{chap:architecture,chap:future-work}. It has since been
-built (\texttt{scripts/run\_pipeline.py}) and validated by a small real
-pilot, but has not yet been run over the complete dataset.
+built (\texttt{scripts/run\_pipeline.py}), validated by a small real
+pilot, and run over the complete 187-row evaluation split
+(\Cref{chap:validation}).
 
 \section{Implementation Overview}
 \label{sec:m-overview}
@@ -48,8 +49,9 @@ in-memory call between the components' own existing functions: every stage
 can still be invoked as its own script against the previous stage's output,
 exactly as described in this chapter, and can also now be driven by a
 single orchestrating process (\texttt{scripts/run\_pipeline.py}) that calls
-every stage in sequence within one pass -- not yet run over the whole
-dataset. \Cref{sec:orchestrator,chap:future-work} return to this point
+every stage in sequence within one pass -- now exercised over the complete
+187-row evaluation split, as \Cref{chap:validation} reports.
+\Cref{sec:orchestrator,chap:future-work} return to this point
 directly. The
 sections below follow this same order, one component at a time, and
 \Cref{sec:m-worked-example} then traces one concrete record through every
@@ -760,14 +762,16 @@ it does not persist its results to a database or knowledge graph -- that is
 handled separately by ResultLogger (\Cref{sec:m-resultlogger}). FixApplicator
 returns one self-contained result per attempt.
 
-% TODO-FULL-RUN: update after full orchestrated dataset execution
-\fullrunupdate{ResultLogger is implemented and validated at pilot scale, not
-yet run over the complete dataset. Wiring many such attempts into an
+ResultLogger is implemented, first validated at pilot scale, and has since
+logged every attempt from the full 187-row evaluation run reported in
+\Cref{chap:validation}. Wiring many such attempts into an
 unattended batch run, and feeding a \texttt{still\_failing} result back into
-RAGRepairAgent for a bounded second attempt, are both now implemented by
-the orchestrator (\texttt{scripts/run\_pipeline.py}) and validated by a
-small real pilot; running either over the complete dataset remains future
-work (\Cref{chap:future-work}).}
+RAGRepairAgent for a bounded second attempt, are both implemented by
+the orchestrator (\texttt{scripts/run\_pipeline.py}); the resulting
+\texttt{repair\_attempts} table for this evaluation run holds 235 rows (187
+Round-1 rows plus 48 Round-2 rows, one per Round-2-eligible notebook).
+Enriching the knowledge graph from this larger table, rather than from the
+pilot sample in \Cref{sec:v-i6}, remains future work (\Cref{chap:future-work}).
 
 \section{Result Logging and Knowledge-Graph Enrichment}
 \label{sec:m-resultlogger}
