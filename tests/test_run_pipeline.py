@@ -17,6 +17,7 @@ import pypi_retriever
 import rag_repair_agent
 import result_logger
 import run_llm_explainer
+import run_pipeline
 from pypi_retriever import load_rag_repair_config
 from run_pipeline import (
     build_excluded_repair_stub,
@@ -70,6 +71,71 @@ def explainer_config():
 @pytest.fixture
 def explainer_template():
     return (ROOT / "prompts" / "dependency_explanation_v1.txt").read_text(encoding="utf-8")
+
+
+# --- load_configs(): provider-aware --model override (LLM model----------
+# sensitivity supplementary experiment) ---------------------------------
+
+def test_load_configs_model_override_defaults_to_ollama_when_provider_absent():
+    """Backward compatibility: the real config/*.yaml files declare no
+    provider key, so --model must land exactly where it always has -
+    repair_agent.ollama.model - unchanged by the provider-aware rewrite."""
+    args = SimpleNamespace(
+        explainer_config=str(ROOT / "config" / "llm_explainer.yaml"),
+        repair_config=str(ROOT / "config" / "rag_repair.yaml"),
+        fix_config=str(ROOT / "config" / "fix_applicator.yaml"),
+        model="override-model",
+        prompt_strategy=None,
+    )
+
+    explainer_cfg, repair_cfg, _fix_cfg = run_pipeline.load_configs(args)
+
+    assert explainer_cfg["models"]["primary"] == "override-model"
+    assert repair_cfg["repair_agent"]["ollama"]["model"] == "override-model"
+
+
+def test_load_configs_model_override_is_provider_aware_for_kiste(tmp_path):
+    """A repair config declaring repair_agent.provider: kiste must receive
+    the --model override in repair_agent.kiste.model, never silently land
+    in an unused repair_agent.ollama.model that provider: kiste never
+    reads."""
+    explainer_path = tmp_path / "llm_explainer.kiste.yaml"
+    explainer_path.write_text(
+        "provider: kiste\n"
+        "models:\n  primary: original-model\n  fallback: null\n"
+        "kiste:\n  base_url: https://kiste.example.invalid/v1\n"
+        "generation:\n  temperature: 0.1\n  top_p: 0.9\n  max_tokens: 700\n  timeout_seconds: 120\n"
+        "retry:\n  max_retries: 1\n  retry_on: []\n"
+        "prompt:\n  strategy: few_shot\n  template: dependency_explanation_v1\n  version: i3_prompt_v1\n"
+        "output:\n  path: data/x.jsonl\n  schema: schemas/explanation.schema.json\n",
+        encoding="utf-8",
+    )
+    repair_path = tmp_path / "rag_repair.kiste.yaml"
+    repair_path.write_text(
+        "repair_agent:\n"
+        "  provider: kiste\n"
+        "  kiste:\n"
+        "    base_url: https://kiste.example.invalid/v1\n"
+        "    model: original-kiste-model\n"
+        "  prompt:\n    template: dependency_repair_v1\n    version: i4_prompt_v1\n"
+        "  retry:\n    max_retries: 1\n    retry_on: []\n"
+        "  output:\n    path: data/y.jsonl\n    schema: schemas/repair_proposal.schema.json\n",
+        encoding="utf-8",
+    )
+
+    args = SimpleNamespace(
+        explainer_config=str(explainer_path),
+        repair_config=str(repair_path),
+        fix_config=str(ROOT / "config" / "fix_applicator.yaml"),
+        model="Qwen3.6-35B-A3B-MLX-8bit",
+        prompt_strategy=None,
+    )
+
+    explainer_cfg, repair_cfg, _fix_cfg = run_pipeline.load_configs(args)
+
+    assert explainer_cfg["models"]["primary"] == "Qwen3.6-35B-A3B-MLX-8bit"
+    assert repair_cfg["repair_agent"]["kiste"]["model"] == "Qwen3.6-35B-A3B-MLX-8bit"
+    assert "ollama" not in repair_cfg["repair_agent"]
 
 
 def always_not_logged(notebook_execution_id, run_id, round_number):

@@ -20,6 +20,13 @@ thesis/TU_Chemnitz_positiv_gruen.pdf
 __pycache__/
 *.pyc
 
+# Secrets (GITLAB_TOKEN, KISTE_API_TOKEN, ...). Never committed; see
+# scripts/evaluation_manifest.py's own "never reads .env" contract and
+# scripts/llm_providers.py, which reads KISTE_API_TOKEN only from the
+# process environment, never from this file.
+.env
+.env.*
+
 # I8 evaluation runs: keep manifest/summary/tables/validation_report (the
 # scientifically useful, reproducible-analysis artifacts); the raw/
 # subfolder (pipeline trace JSONL + repair_attempts.sqlite) is runtime

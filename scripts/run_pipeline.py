@@ -488,7 +488,14 @@ def load_configs(args: argparse.Namespace) -> Tuple[Dict[str, Any], Dict[str, An
 
     if args.model:
         explainer_config.setdefault("models", {})["primary"] = args.model
-        repair_config.setdefault("repair_agent", {}).setdefault("ollama", {})["model"] = args.model
+        # Provider-aware: writes into whichever provider sub-section the
+        # loaded repair config actually declares (repair_agent.ollama by
+        # default, repair_agent.kiste when repair_agent.provider: kiste),
+        # so --model overrides the model an evaluation run actually uses
+        # instead of silently landing in an unused "ollama" sub-key.
+        repair_agent_config = repair_config.setdefault("repair_agent", {})
+        repair_provider = repair_agent_config.get("provider", "ollama")
+        repair_agent_config.setdefault(repair_provider, {})["model"] = args.model
     if args.prompt_strategy:
         explainer_config.setdefault("prompt", {})["strategy"] = args.prompt_strategy
 
@@ -523,7 +530,15 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         default=2,
         help="Maximum repair rounds per record. Round 3 is never possible regardless of this value.",
     )
-    parser.add_argument("--model", default=None, help="Override the Ollama model for LLMExplainer and RAGRepairAgent.")
+    parser.add_argument(
+        "--model",
+        default=None,
+        help=(
+            "Override the model for LLMExplainer and RAGRepairAgent. Provider-aware: lands in "
+            "repair_agent.ollama.model or repair_agent.kiste.model depending on the loaded "
+            "--repair-config's own repair_agent.provider (default: ollama)."
+        ),
+    )
     parser.add_argument("--prompt-strategy", default=None, help="Override LLMExplainer's config prompt.strategy.")
     parser.add_argument(
         "--run-id",

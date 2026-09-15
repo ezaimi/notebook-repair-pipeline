@@ -1,0 +1,51 @@
+# Kiste (Qwen3.6-35B-A3B-MLX-8bit) sibling of config/llm_explainer.yaml,
+# for the LLM model-sensitivity supplementary experiment.
+#
+# config/llm_explainer.yaml itself is never modified by this experiment -
+# see docs/i8-pre-final-evaluation-freeze.md, which hashes it as part of
+# the frozen I8 final-evaluation configuration. This file is a separate,
+# additive config selected explicitly via --explainer-config / --config;
+# it is never the default for scripts/run_llm_explainer.py or
+# scripts/run_pipeline.py.
+#
+# Every value below is identical to config/llm_explainer.yaml except
+# `provider`, `models.primary`, `kiste`, `generation.max_tokens`, and
+# `output.path` - so that model choice is the only intended independent
+# variable. generation.max_tokens is set to 4096 (raised from Gemma's 700),
+# the smallest of {1400, 2800, 4096} that produced zero truncated
+# (finish_reason: length) LLMExplainer/RAGRepairAgent calls across 5
+# dev-split calibration records (3 missing_package, 2 wrong_version) -
+# calibrated purely to eliminate output truncation for this model, not for
+# repair-outcome quality. temperature/top_p/timeout_seconds are unchanged.
+
+provider: kiste
+
+models:
+  primary: Qwen3.6-35B-A3B-MLX-8bit
+  fallback: null
+
+kiste:
+  base_url: "https://kiste.informatik.tu-chemnitz.de/v1"
+
+generation:
+  temperature: 0.1
+  top_p: 0.9
+  max_tokens: 4096
+  timeout_seconds: 120
+
+retry:
+  max_retries: 1
+  retry_on:
+    - invalid_json
+    - schema_validation_error
+    - timeout
+    - model_unavailable
+
+prompt:
+  strategy: few_shot
+  template: dependency_explanation_v1
+  version: i3_prompt_v1
+
+output:
+  path: data/llm-explanations-kiste/explanation_results.jsonl
+  schema: schemas/explanation.schema.json

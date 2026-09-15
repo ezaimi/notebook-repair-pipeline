@@ -1,0 +1,56 @@
+# Kiste (Qwen3.6-35B-A3B-MLX-8bit) sibling of config/rag_repair.yaml, for
+# the LLM model-sensitivity supplementary experiment.
+#
+# config/rag_repair.yaml itself is never modified by this experiment - see
+# docs/i8-pre-final-evaluation-freeze.md, which hashes it as part of the
+# frozen I8 final-evaluation configuration. This file is a separate,
+# additive config selected explicitly via --repair-config; it is never the
+# default for scripts/rag_repair_agent.py or scripts/run_pipeline.py.
+#
+# Only the repair_agent section is defined here. `runtime.python_version`
+# and `pypi_client.rate_limit` are deliberately NOT duplicated: PyPI
+# retrieval (scripts/pypi_retriever.py) reads those from a module-level
+# constant loaded from the fixed path config/rag_repair.yaml at import
+# time (see load_rag_repair_config() / _RAG_REPAIR_CONFIG in
+# pypi_retriever.py), never from whichever --repair-config path
+# scripts/rag_repair_agent.py itself was given. Retrieval behavior is
+# therefore identical and untouched regardless of provider - this file
+# genuinely cannot influence it, by construction, not just by convention.
+#
+# Every repair_agent value below is identical to config/rag_repair.yaml's
+# repair_agent section except `provider`, `kiste`, and `output.path`, so
+# that model choice is the only intended independent variable.
+# kiste.max_tokens is set to 4096 (raised from Gemma's 700), the smallest
+# of {1400, 2800, 4096} that produced zero truncated (finish_reason:
+# length) LLMExplainer/RAGRepairAgent calls across 5 dev-split calibration
+# records (3 missing_package, 2 wrong_version) - calibrated purely to
+# eliminate output truncation for this model, not for repair-outcome
+# quality. temperature/top_p/timeout_seconds are unchanged.
+
+repair_agent:
+  provider: kiste
+
+  kiste:
+    base_url: "https://kiste.informatik.tu-chemnitz.de/v1"
+    model: "Qwen3.6-35B-A3B-MLX-8bit"
+    temperature: 0.1
+    top_p: 0.9
+    max_tokens: 4096
+    timeout_seconds: 300
+
+  prompt:
+    template: "dependency_repair_v1"
+    version: "i4_prompt_v1"
+
+  retry:
+    max_retries: 1
+    retry_on:
+      - invalid_json
+      - schema_validation_error
+      - grounding_validation_error
+      - timeout
+      - model_unavailable
+
+  output:
+    path: "data/repair-proposals-kiste/repair_proposals.jsonl"
+    schema: "schemas/repair_proposal.schema.json"

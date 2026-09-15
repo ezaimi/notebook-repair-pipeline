@@ -254,6 +254,26 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("--prompt-strategy", default="few_shot")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument(
+        "--explainer-config",
+        default="config/llm_explainer.yaml",
+        help=(
+            "Path to the LLMExplainer config to use (default: %(default)s). Pass a sibling "
+            "config (e.g. config/llm_explainer.kiste.yaml) for a different provider/model "
+            "without touching the frozen default - never edit config/llm_explainer.yaml itself, "
+            "see docs/i8-pre-final-evaluation-freeze.md."
+        ),
+    )
+    parser.add_argument(
+        "--repair-config",
+        default="config/rag_repair.yaml",
+        help=(
+            "Path to the RAGRepairAgent config to use (default: %(default)s). Pass a sibling "
+            "config (e.g. config/rag_repair.kiste.yaml) for a different provider/model without "
+            "touching the frozen default - never edit config/rag_repair.yaml itself, see "
+            "docs/i8-pre-final-evaluation-freeze.md."
+        ),
+    )
+    parser.add_argument(
         "--fix-config",
         default=DEFAULT_FIX_CONFIG,
         help=(
@@ -290,6 +310,8 @@ def main() -> None:
             max_rounds=args.max_rounds,
             model=args.model,
             prompt_strategy=args.prompt_strategy,
+            explainer_config=args.explainer_config,
+            repair_config=args.repair_config,
             fix_config=args.fix_config,
             repository_metadata_db_path=args.repository_metadata_db_path,
             overwrite=args.overwrite,

@@ -201,6 +201,24 @@ def build_manifest(
     root = root or Path(__file__).resolve().parent.parent
     i2_full_path = root / i2_path
 
+    # Hash the config files this run actually loads, not always the
+    # hardcoded defaults: rag_repair_config/llm_explainer_config/
+    # fix_applicator_config are overridden to explainer_config_path/
+    # repair_config_path/fix_config_path (e.g. a sibling config/*.kiste.yaml
+    # for the LLM model-sensitivity experiment) so config_hashes never
+    # misreports which config a run used. prompts_dir and package_mapping
+    # stay at DEFAULT_HASHED_PATHS's fixed locations - neither prompts nor
+    # the package mapping are ever provider-specific. When
+    # explainer_config_path/repair_config_path/fix_config_path equal
+    # today's defaults (as every existing Gemma call site still does),
+    # this dict is byte-identical to DEFAULT_HASHED_PATHS, so every
+    # already-produced manifest (including the frozen I8 final-evaluation
+    # ones) remains exactly reproducible.
+    hashed_paths = dict(DEFAULT_HASHED_PATHS)
+    hashed_paths["rag_repair_config"] = repair_config_path
+    hashed_paths["llm_explainer_config"] = explainer_config_path
+    hashed_paths["fix_applicator_config"] = fix_config_path
+
     return {
         "run_id": run_id,
         "split": split,
@@ -221,7 +239,7 @@ def build_manifest(
         "database_path": database_path,
         "output_dir": output_dir,
         "repository_metadata_db": check_repository_metadata_db(repository_metadata_db_path),
-        "config_hashes": build_config_hashes(root),
+        "config_hashes": build_config_hashes(root, hashed_paths),
         "i2_path": i2_path,
     }
 

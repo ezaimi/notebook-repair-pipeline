@@ -212,6 +212,105 @@ def test_write_and_load_manifest_roundtrip(tmp_path):
     assert loaded == manifest
 
 
+# --- config_hashes reflects the config actually used (LLM model-sensitivity --
+# supplementary experiment: a sibling config/*.kiste.yaml must never be
+# silently reported under the default Gemma config's hash) -------------------
+
+def test_build_manifest_hashes_the_actual_explainer_and_repair_config_paths_used(tmp_path):
+    root = _make_repo_fixture(tmp_path)
+    (root / "config" / "llm_explainer.kiste.yaml").write_text(
+        "# a genuinely different kiste sibling config", encoding="utf-8"
+    )
+    (root / "config" / "rag_repair.kiste.yaml").write_text(
+        "# a genuinely different kiste sibling repair config", encoding="utf-8"
+    )
+    i2_path = _write_i2(tmp_path, ["dev"] * 13)
+
+    manifest = em.build_manifest(
+        run_id="i8-test-kiste",
+        split="dev",
+        max_rounds=2,
+        model="Qwen3.6-35B-A3B-MLX-8bit",
+        prompt_strategy="few_shot",
+        explanation_prompt_version="i3_prompt_v1",
+        repair_prompt_version="i4_prompt_v1",
+        database_path="data/x.sqlite",
+        output_dir="data/pipeline-runs",
+        explainer_config_path="config/llm_explainer.kiste.yaml",
+        repair_config_path="config/rag_repair.kiste.yaml",
+        fix_config_path="config/fix_applicator.yaml",
+        repository_metadata_db_path=None,
+        i2_path=str(i2_path.relative_to(tmp_path)),
+        root=root,
+    )
+
+    expected_explainer_hash = em.hash_file(root / "config" / "llm_explainer.kiste.yaml")
+    expected_repair_hash = em.hash_file(root / "config" / "rag_repair.kiste.yaml")
+    default_explainer_hash = em.hash_file(root / "config" / "llm_explainer.yaml")
+    default_repair_hash = em.hash_file(root / "config" / "rag_repair.yaml")
+
+    assert manifest["config_hashes"]["llm_explainer_config"] == expected_explainer_hash
+    assert manifest["config_hashes"]["rag_repair_config"] == expected_repair_hash
+    # never silently falls back to (or coincides with) the default Gemma files
+    assert manifest["config_hashes"]["llm_explainer_config"] != default_explainer_hash
+    assert manifest["config_hashes"]["rag_repair_config"] != default_repair_hash
+
+
+def test_build_manifest_default_config_paths_match_pre_existing_hash_behavior(tmp_path):
+    """Backward compatibility: every existing call site (Gemma runs) passes
+    exactly today's default paths, so config_hashes must come out
+    byte-identical to build_config_hashes(root) with no override - the
+    already-produced frozen I8 manifests remain exactly reproducible."""
+    root = _make_repo_fixture(tmp_path)
+    i2_path = _write_i2(tmp_path, ["dev"] * 13)
+
+    manifest = em.build_manifest(
+        run_id="i8-test-default",
+        split="dev",
+        max_rounds=2,
+        model="gemma2:9b",
+        prompt_strategy="few_shot",
+        explanation_prompt_version="i3_prompt_v1",
+        repair_prompt_version="i4_prompt_v1",
+        database_path="data/x.sqlite",
+        output_dir="data/pipeline-runs",
+        explainer_config_path="config/llm_explainer.yaml",
+        repair_config_path="config/rag_repair.yaml",
+        fix_config_path="config/fix_applicator.yaml",
+        repository_metadata_db_path=None,
+        i2_path=str(i2_path.relative_to(tmp_path)),
+        root=root,
+    )
+
+    assert manifest["config_hashes"] == em.build_config_hashes(root)
+
+
+def test_manifest_never_stores_kiste_token(tmp_path):
+    root = _make_repo_fixture(tmp_path)
+    (root / ".env").write_text("KISTE_API_TOKEN=super-secret-kiste-value", encoding="utf-8")
+    i2_path = _write_i2(tmp_path, ["dev"] * 13)
+    manifest = em.build_manifest(
+        run_id="i8-test-002",
+        split="dev",
+        max_rounds=2,
+        model="Qwen3.6-35B-A3B-MLX-8bit",
+        prompt_strategy="few_shot",
+        explanation_prompt_version="i3_prompt_v1",
+        repair_prompt_version="i4_prompt_v1",
+        database_path="data/x.sqlite",
+        output_dir="data/pipeline-runs",
+        explainer_config_path="config/llm_explainer.yaml",
+        repair_config_path="config/rag_repair.yaml",
+        fix_config_path="config/fix_applicator.yaml",
+        repository_metadata_db_path=None,
+        i2_path=str(i2_path.relative_to(tmp_path)),
+        root=root,
+    )
+    serialized = json.dumps(manifest)
+    assert "super-secret-kiste-value" not in serialized
+    assert ".env" not in json.dumps(em.DEFAULT_HASHED_PATHS)
+
+
 # --- consistency checking (resume) ---------------------------------------------
 
 def _base_manifest(**overrides):

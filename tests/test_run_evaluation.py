@@ -301,6 +301,99 @@ def test_run_evaluation_threads_fix_config_into_manifest_and_pipeline_argv(tmp_p
     assert argv[argv.index("--fix-config") + 1] == "config/fix_applicator.evaluation.local.yaml"
 
 
+# --- --explainer-config / --repair-config CLI wiring (LLM model----------
+# sensitivity supplementary experiment) ----------------------------------
+
+def test_cli_explainer_and_repair_config_default_match_function_defaults():
+    """Backward compatibility: omitting both flags must produce exactly the
+    same values run_evaluation()'s own keyword defaults use."""
+    args = re_.parse_args(["--split", "dev", "--run-id", "test-id"])
+    assert args.explainer_config == "config/llm_explainer.yaml"
+    assert args.repair_config == "config/rag_repair.yaml"
+
+
+def test_cli_explainer_and_repair_config_accept_overrides():
+    args = re_.parse_args(
+        [
+            "--split", "dev",
+            "--run-id", "test-id",
+            "--explainer-config", "config/llm_explainer.kiste.yaml",
+            "--repair-config", "config/rag_repair.kiste.yaml",
+        ]
+    )
+    assert args.explainer_config == "config/llm_explainer.kiste.yaml"
+    assert args.repair_config == "config/rag_repair.kiste.yaml"
+
+
+def test_main_passes_cli_explainer_and_repair_config_into_run_evaluation(monkeypatch):
+    """CLI values must actually reach run_evaluation() - captured via a
+    monkeypatched run_evaluation rather than exercising the real pipeline."""
+    captured = {}
+
+    def fake_run_evaluation(**kwargs):
+        captured.update(kwargs)
+        return {"run_id": kwargs["run_id"], "complete": True}
+
+    monkeypatch.setattr(re_, "run_evaluation", fake_run_evaluation)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_evaluation.py",
+            "--split", "dev",
+            "--run-id", "test-id",
+            "--explainer-config", "config/llm_explainer.kiste.yaml",
+            "--repair-config", "config/rag_repair.kiste.yaml",
+            "--model", "Qwen3.6-35B-A3B-MLX-8bit",
+        ],
+    )
+    re_.main()
+    assert captured["explainer_config"] == "config/llm_explainer.kiste.yaml"
+    assert captured["repair_config"] == "config/rag_repair.kiste.yaml"
+    assert captured["model"] == "Qwen3.6-35B-A3B-MLX-8bit"
+
+
+def test_run_evaluation_threads_explainer_and_repair_config_into_manifest_hashes_and_pipeline_argv(tmp_path):
+    """End-to-end (via the fake pipeline invoker): sibling kiste configs
+    must reach the manifest's config_hashes (hashed as themselves, not the
+    default Gemma files) and the actual scripts/run_pipeline.py argv."""
+    root, i2_relpath = _make_repo_fixture(tmp_path, {"dev": 13})
+    kiste_explainer_path = root / "config" / "llm_explainer.kiste.yaml"
+    kiste_explainer_path.write_text("# a genuinely different kiste sibling config", encoding="utf-8")
+    kiste_repair_path = root / "config" / "rag_repair.kiste.yaml"
+    kiste_repair_path.write_text("# a genuinely different kiste sibling repair config", encoding="utf-8")
+
+    captured_argv = {}
+
+    def capturing_invoker(argv, cwd):
+        captured_argv["argv"] = argv
+        return _fake_invoker_writing_n_trace_lines(13)(argv, cwd)
+
+    result = re_.run_evaluation(
+        split="dev",
+        run_id="i8-dev-kisteconfig",
+        model="Qwen3.6-35B-A3B-MLX-8bit",
+        i2_path=i2_relpath,
+        root=root,
+        pipeline_invoker=capturing_invoker,
+        explainer_config="config/llm_explainer.kiste.yaml",
+        repair_config="config/rag_repair.kiste.yaml",
+        repository_metadata_db_path=None,
+    )
+
+    manifest = em.load_manifest(Path(result["manifest_path"]))
+    assert manifest["config_paths"]["explainer_config"] == "config/llm_explainer.kiste.yaml"
+    assert manifest["config_paths"]["repair_config"] == "config/rag_repair.kiste.yaml"
+    assert manifest["config_hashes"]["llm_explainer_config"] == em.hash_file(kiste_explainer_path)
+    assert manifest["config_hashes"]["rag_repair_config"] == em.hash_file(kiste_repair_path)
+    assert manifest["config_hashes"]["llm_explainer_config"] != em.hash_file(root / "config" / "llm_explainer.yaml")
+    assert manifest["config_hashes"]["rag_repair_config"] != em.hash_file(root / "config" / "rag_repair.yaml")
+
+    argv = captured_argv["argv"]
+    assert argv[argv.index("--explainer-config") + 1] == "config/llm_explainer.kiste.yaml"
+    assert argv[argv.index("--repair-config") + 1] == "config/rag_repair.kiste.yaml"
+
+
 def test_run_evaluation_manifest_uses_supplied_metadata_db_path_and_records_sha256(tmp_path):
     root, i2_relpath = _make_repo_fixture(tmp_path, {"dev": 13})
     local_db = tmp_path / "upstream_pmc_docker_db.sqlite"
