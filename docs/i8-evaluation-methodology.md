@@ -95,7 +95,10 @@ split only.
   than the LLM-conditional rate above whenever the pipeline abstains
   before the LLM on a meaningful share of records. Report both together;
   neither substitutes for the other.
-- **Subtype-level repair success**, **explanation schema-validity rate**.
+- **Subtype-level repair success**.
+- **Explanation metrics** - three views, defined in the dedicated
+  "Explanation metrics" section below. They are reported in their own
+  block (`explanation.*`, `table_9`) and never enter any repair metric.
 - **Distribution Resolution Accuracy** (once manual labels exist) - no
   Precision@k/Recall@k/MRR/nDCG: `scripts/pypi_retriever.py`'s `retrieve()`
   sorts candidates newest-first, not by relevance, so there is nothing to
@@ -104,6 +107,100 @@ split only.
   precision/recall/F1, subtype confusion matrix + per-class P/R/F1,
   failing-module exact-match accuracy (deliberately NOT a
   precision/recall/F1/confusion-matrix metric - unbounded label space).
+
+## Explanation metrics
+
+The explanation objective (O1) is evaluated separately from the repair
+objectives (O2/O3). Since the Round-2 LLMExplainer extension of
+`scripts/run_pipeline.py`, a notebook can produce **two** explanation
+records, so "one notebook = one explanation" no longer holds and every
+explanation metric must state its denominator.
+
+### Explanation population
+
+- **Original-failure explanation.** Every notebook processed receives one
+  explanation of its original dependency error (Round 1), exactly as
+  before. It is the top-level `explanation` in the trace (mirrored, as the
+  same record, onto the Round-1 entry).
+- **Round-2 explanation.** When Round 1's re-execution ends `still_failing`
+  on a *genuinely new* error (`same_as_original_error == False`) and the
+  run still has round budget, the orchestrator reclassifies that error
+  with the same two classifier stages every original row went through
+  (`build_round2_record()`) and **explains it before evaluating repair
+  eligibility**. Explanation scope is therefore broader than repair scope,
+  exactly as in Round 1: a newly exposed `system_library`,
+  `mapping_unknown`, or otherwise non-repairable error is still explained.
+  Repair eligibility then decides only whether RAGRepairAgent and
+  FixApplicator run on that record.
+- **Where it lives.** The Round-2 explanation is attached to
+  `rounds[0].round2_trigger.explanation`, next to the `round2_record` it
+  explains. If Round 2 executed, the executed Round-2 entry carries the
+  same record again (`rounds[1].explanation`, equal content). That
+  duplicate is one record represented twice, never two explanations:
+  `evaluation_metrics.round2_explanation()` returns exactly one record per
+  notebook (trigger copy first, entry copy only as a fallback).
+- **Trace-only explanations.** A non-repairable Round-2 error executes no
+  repair round, so under the unchanged one-row-per-executed-round
+  ResultLogger contract it has **no `repair_attempts` row**. Its
+  explanation exists in the trace only, and the trace is the authoritative
+  source for every Round-2 explanation count.
+- **Bound.** Reclassification and explanation happen at most once per
+  notebook (after Round 1), inside the same `MAX_ROUNDS_HARD_CAP = 2`;
+  there is no third-round explanation.
+
+### The three metrics (record level)
+
+The unit is the **final explanation result for one encountered dependency
+error**, regardless of how many LLM attempts it took.
+
+- **A. Original explanation schema validity**
+  (`original_explanation_schema_validity_rate`; historical alias
+  `explanation_schema_validity_rate` with its exact former shape) =
+  valid original-failure explanations / **notebooks processed in the run**
+  (187 for the evaluation split). Directly comparable with the frozen
+  Gemma/Qwen runs; its denominator is never changed.
+- **B. Round-2 explanation schema validity**
+  (`round2_explanation_schema_validity_rate`) = valid Round-2
+  explanations / **newly reclassified Round-2 errors that received an
+  explanation record**, success or failed, *including* those later
+  excluded from repair. It is **not** the repair-eligible subset, **not**
+  the subset that reached the Round-2 repair LLM, and **not** the executed
+  Round-2 row count. The report also gives `reclassified_new_errors`,
+  `reclassified_without_explanation` (0 in a fresh run),
+  `explained_repair_eligible`, and
+  `explained_not_repair_eligible_trace_only`.
+- **C. Combined explanation schema validity**
+  (`combined_explanation_schema_validity_rate`) = (A valid + B valid) /
+  (A processed + B processed). A descriptive total-reliability figure; it
+  never replaces A.
+
+### Records versus LLM attempts
+
+The explainer retries once on a timeout, model-unavailability, or
+schema-invalid response (`config/llm_explainer.yaml`). A retry is **not**
+a second explanation record. Validity rates are computed over records;
+`explanation.call_counts` separately reports `*_records` and
+`*_llm_attempts` (the sum of each record's own `attempts`), plus
+`records_with_retry`, for call-volume and cost reporting.
+
+### Separation from repair metrics
+
+A Round-2 explanation call is never a repair-agent invocation. Every
+repair metric (abstention, eligibility, actual repair LLM attempts,
+proposal validity, grounding, coverage, targeted-error resolution, full
+recovery, infrastructure/method failure) is derived from `i4_result` /
+`i5_result` entries only, and an explanation record is never an
+`i4_result`. The Round-2 explainer therefore changes no repair metric's
+definition or value; only explanation calls increase.
+
+### Human evaluation scope
+
+The human explanation-quality study (`docs/human-explanation-evaluation-
+questionnaire.md`, `scripts/analyze_human_evaluation.py`) rated
+**original-failure explanations only**, drawn from the frozen Gemma
+evaluation run. No Round-2 explanation has been human-evaluated. Metrics
+A/B/C are automated schema checks and must never be described as
+human-evaluated quality.
 
 ## Infrastructure-vs-method classification rule
 
@@ -158,10 +255,30 @@ time - never a hardcoded 13/187/214), `max_rounds`, `model`,
 version, git commit SHA, timestamps, database/output paths, repository
 metadata DB accessibility, and SHA-256 hashes of `prompts/`,
 `config/package_mapping.yaml`, `config/rag_repair.yaml`,
-`config/llm_explainer.yaml`, `config/fix_applicator.yaml`. It never reads
-or stores `.env` contents. `scripts/run_evaluation.py` refuses to resume
-under an existing `run_id` if any of these frozen fields drifted since the
-last manifest for that `run_id` (`evaluation_manifest.ManifestConsistencyError`).
+`config/llm_explainer.yaml`, `config/fix_applicator.yaml` (hashed at the
+config paths the run actually loads, so a machine-local override such as
+`config/fix_applicator.evaluation.local.yaml` is hashed as itself). It never
+reads or stores `.env` contents. `scripts/run_evaluation.py` refuses to
+resume under an existing `run_id` if any of these frozen fields drifted
+since the last manifest for that `run_id`
+(`evaluation_manifest.ManifestConsistencyError`).
+
+Three provenance fields were added for the Round-2-explanation reruns and
+are absent from the frozen I8/I9 manifests (which therefore still validate
+exactly as before):
+
+- `code_hashes` - SHA-256 of the component source files that determine
+  behaviour (`scripts/run_pipeline.py`, `run_llm_explainer.py`,
+  `rag_repair_agent.py`, `fix_applicator.py`, `result_logger.py`,
+  `evaluation_metrics.py`). `git_commit_sha` identifies HEAD, not the
+  working tree; the code hash identifies what actually ran. Compared on
+  resume and by `validate_evaluation_results.py` only when a manifest
+  recorded it.
+- `git_working_tree_dirty` - whether the SHA fully identifies the code.
+- `orchestrator_features.round2_explanation` - derived by inspecting
+  `scripts/run_pipeline.py` for `explain_round_record()`, never asserted
+  by hand, so a run's manifest states whether newly exposed Round-2 errors
+  were explained.
 
 ## Output artifact structure
 
@@ -186,6 +303,7 @@ data/evaluation/<run_id>/
     table_6_pypi_rag_proposal_quality.csv
     table_7_classifier_performance.csv
     table_8_pipeline_resultlogger_integrity.csv
+    table_9_explanation_schema_validity.csv   # metrics A/B/C + record/attempt counts
   validation_report.json           # scripts/validate_evaluation_results.py
 ```
 
@@ -225,14 +343,17 @@ human fills in the `manual_*` columns; a row left blank is skipped and
 counted separately, never defaulted to "correct" or "incorrect", and never
 inferred from the pipeline's own prediction.
 
-Also required, later and separately from I8: the LLMExplainer human
-evaluation rubric (correctness/relevance/clarity/groundedness/usefulness)
-over a ~30-40 explanation sample drawn **only** from the evaluation
-split's own outputs - dev-split explanations are excluded from that later
-sample because two dev records (notebook 8, sklearn; notebook 174, scipy
+Separately from I8, the LLMExplainer human evaluation was carried out as a
+six-item Explanation-Satisfaction-Scale study over 12 frozen
+**original-failure** explanations drawn only from the evaluation split's
+own outputs (`docs/human-explanation-evaluation-questionnaire.md`,
+`scripts/select_human_evaluation_pool.py`,
+`scripts/analyze_human_evaluation.py`). Dev-split explanations were
+excluded because two dev records (notebook 8, sklearn; notebook 174, scipy
 cumtrapz) are the frozen few-shot examples baked into
 `prompts/dependency_explanation_v1.txt`, and the rest of `dev` was used
-for prompt development.
+for prompt development. Round-2 explanations were not part of that study
+(see "Explanation metrics" / "Human evaluation scope").
 
 ## Exact-commit requirement
 

@@ -114,6 +114,14 @@ def write_outputs(report: Dict[str, Any], summary_dir: Path, tables_dir: Path) -
         if k not in {"subtype_level_repair_success"}
     ]
     flat_rows += [{"metric": f"round2_summary.{k}", "value": v} for k, v in report["round2_summary"].items()]
+    # Explanation-component block (metrics A/B/C + record/attempt counts),
+    # flattened one level so each rate and count is its own row and a
+    # later model comparison can read them without parsing dict strings.
+    for block_name, block in report.get("explanation", {}).items():
+        if isinstance(block, dict):
+            flat_rows += [{"metric": f"explanation.{block_name}.{k}", "value": v} for k, v in block.items()]
+        else:
+            flat_rows.append({"metric": f"explanation.{block_name}", "value": block})
     write_kv_csv(flat_rows, summary_dir / "evaluation_summary.csv")
 
     # --- per-notebook comparison CSV ---
@@ -325,15 +333,82 @@ def write_outputs(report: Dict[str, Any], summary_dir: Path, tables_dir: Path) -
             {"metric": "expected_record_count", "value": report["expected_record_count"]},
             {"metric": "actual_record_count", "value": report["actual_record_count"]},
             {
+                # Kept under its historical name for continuity with the
+                # frozen I8/I9 table_8 files. It is metric A (original-
+                # failure explanations / notebooks processed) - see
+                # table_9 for the Round-2 and combined views.
                 "metric": "explanation_schema_validity_rate",
                 "value": report["secondary"]["explanation_schema_validity"]["rate"],
             },
             {
                 "metric": "note",
-                "value": "run scripts/validate_evaluation_results.py for full ResultLogger/KG integrity checks",
+                "value": (
+                    "explanation_schema_validity_rate is the ORIGINAL-failure explanation rate "
+                    "(metric A, notebook-level denominator); Round-2 and combined explanation "
+                    "validity are in table_9_explanation_schema_validity.csv. Run "
+                    "scripts/validate_evaluation_results.py for full ResultLogger/KG integrity checks."
+                ),
             },
         ],
         tables_dir / "table_8_pipeline_resultlogger_integrity.csv",
+    )
+
+    # --- table 9: explanation component, kept apart from every repair table ---
+    expl = report.get("explanation", {})
+    original = expl.get("original_explanation_schema_validity", {})
+    round2 = expl.get("round2_explanation_schema_validity", {})
+    combined = expl.get("combined_explanation_schema_validity", {})
+    counts = expl.get("call_counts", {})
+
+    def _frac(block: Dict[str, Any]) -> str:
+        if not block or block.get("processed") is None:
+            return "n/a"
+        return f"{block.get('valid')}/{block.get('processed')}"
+
+    write_kv_csv(
+        [
+            {"metric": "original_failures_schema_valid", "value": _frac(original)},
+            {"metric": "original_explanation_schema_validity_rate", "value": original.get("rate")},
+            {"metric": "round2_newly_exposed_failures_schema_valid", "value": _frac(round2)},
+            {"metric": "round2_explanation_schema_validity_rate", "value": round2.get("rate")},
+            {"metric": "combined_schema_valid", "value": _frac(combined)},
+            {"metric": "combined_explanation_schema_validity_rate", "value": combined.get("rate")},
+            {"metric": "original_explanation_records", "value": counts.get("original_records")},
+            {"metric": "round2_explanation_records", "value": counts.get("round2_records")},
+            {"metric": "total_explanation_records", "value": counts.get("total_records")},
+            {"metric": "original_valid", "value": original.get("valid")},
+            {"metric": "original_failed", "value": original.get("failed")},
+            {"metric": "round2_valid", "value": round2.get("valid")},
+            {"metric": "round2_failed", "value": round2.get("failed")},
+            {"metric": "combined_valid", "value": combined.get("valid")},
+            {"metric": "combined_failed", "value": combined.get("failed")},
+            {"metric": "round2_reclassified_new_errors", "value": round2.get("reclassified_new_errors")},
+            {"metric": "round2_reclassified_without_explanation", "value": round2.get("reclassified_without_explanation")},
+            {"metric": "round2_explained_repair_eligible", "value": round2.get("explained_repair_eligible")},
+            {
+                "metric": "round2_explained_not_repair_eligible_trace_only",
+                "value": round2.get("explained_not_repair_eligible_trace_only"),
+            },
+            {"metric": "original_llm_attempts_incl_retries", "value": counts.get("original_llm_attempts")},
+            {"metric": "round2_llm_attempts_incl_retries", "value": counts.get("round2_llm_attempts")},
+            {"metric": "total_llm_attempts_incl_retries", "value": counts.get("total_llm_attempts")},
+            {"metric": "records_with_retry", "value": counts.get("records_with_retry")},
+            {
+                "metric": "note",
+                "value": (
+                    "Record-level schema validity, one record per encountered dependency error. "
+                    "Denominators: original = notebooks processed in this run (comparable with "
+                    "pre-Round-2-explanation runs); round2 = newly reclassified Round-2 errors that "
+                    "received an explanation, INCLUDING non-repairable ones that exist in the trace only "
+                    "(not the repair-eligible, LLM-reached, or executed-round subset); combined = both. "
+                    "Retries are counted only in *_llm_attempts_incl_retries, never as extra records. "
+                    "A Round-2 explanation call is not a repair-agent invocation and does not enter any "
+                    "repair metric (table_1-table_6). These are automated schema checks only; the human "
+                    "explanation-quality study covered original-failure explanations exclusively."
+                ),
+            },
+        ],
+        tables_dir / "table_9_explanation_schema_validity.csv",
     )
 
 

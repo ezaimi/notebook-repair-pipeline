@@ -41,6 +41,26 @@ DEFAULT_HASHED_PATHS = {
     "fix_applicator_config": "config/fix_applicator.yaml",
 }
 
+# Code files whose content determines the pipeline's BEHAVIOUR (as opposed
+# to its configuration), hashed into a separate `code_hashes` block. Kept
+# out of DEFAULT_HASHED_PATHS on purpose: config_hashes is compared key by
+# key against frozen I8/I9 manifests, and adding a key there would make
+# every frozen manifest fail re-validation. code_hashes is a NEW, optional
+# block - a validator compares it only when the manifest recorded it.
+#
+# Why this exists: git_commit_sha identifies HEAD, not the working tree. A
+# run made on an uncommitted change (e.g. the Round-2 LLMExplainer
+# behaviour) would otherwise carry the SHA of code that does not have that
+# behaviour. The code hash is the honest identity of what actually ran.
+DEFAULT_CODE_HASHED_PATHS = {
+    "run_pipeline": "scripts/run_pipeline.py",
+    "run_llm_explainer": "scripts/run_llm_explainer.py",
+    "rag_repair_agent": "scripts/rag_repair_agent.py",
+    "fix_applicator": "scripts/fix_applicator.py",
+    "result_logger": "scripts/result_logger.py",
+    "evaluation_metrics": "scripts/evaluation_metrics.py",
+}
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -104,6 +124,47 @@ def get_git_commit_sha(root: Path) -> Optional[str]:
     if result.returncode != 0:
         return None
     return result.stdout.strip() or None
+
+
+def get_git_working_tree_dirty(root: Path) -> Optional[bool]:
+    """True if `git status --porcelain` reports any tracked modification or
+    untracked file, False if clean, None if git is unavailable. Recorded
+    so a reader knows whether git_commit_sha fully identifies the code
+    that ran (a dirty tree means it may not; see code_hashes)."""
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=normal"],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return bool(result.stdout.strip())
+
+
+def build_code_hashes(root: Path, hashed_paths: Optional[Dict[str, str]] = None) -> Dict[str, Optional[str]]:
+    hashed_paths = hashed_paths or DEFAULT_CODE_HASHED_PATHS
+    return {name: hash_path(root / relpath) for name, relpath in hashed_paths.items()}
+
+
+def detect_orchestrator_features(root: Path) -> Dict[str, bool]:
+    """Behavioural facts about the orchestrator that a later reader needs
+    in order to interpret a run, DERIVED from the code file rather than
+    asserted by a flag someone could forget to update. Currently one:
+    whether a newly exposed Round-2 error receives its own LLMExplainer
+    explanation (scripts/run_pipeline.py's explain_round_record()). A
+    frozen I8/I9 run, made before that function existed, has no
+    orchestrator_features block at all."""
+    pipeline_path = root / "scripts" / "run_pipeline.py"
+    try:
+        source = pipeline_path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    return {"round2_explanation": "def explain_round_record(" in source}
 
 
 def get_python_version() -> str:
@@ -235,11 +296,17 @@ def build_manifest(
         },
         "python_version": get_python_version(),
         "git_commit_sha": get_git_commit_sha(root),
+        "git_working_tree_dirty": get_git_working_tree_dirty(root),
         "created_at": utc_now(),
         "database_path": database_path,
         "output_dir": output_dir,
         "repository_metadata_db": check_repository_metadata_db(repository_metadata_db_path),
         "config_hashes": build_config_hashes(root, hashed_paths),
+        # New optional blocks (absent from frozen I8/I9 manifests): the
+        # identity of the code that ran, and behavioural facts derived from
+        # it. See DEFAULT_CODE_HASHED_PATHS / detect_orchestrator_features().
+        "code_hashes": build_code_hashes(root),
+        "orchestrator_features": detect_orchestrator_features(root),
         "i2_path": i2_path,
     }
 
@@ -285,6 +352,15 @@ def diff_manifests(previous: Dict[str, Any], current: Dict[str, Any]) -> List[st
         curr_value = current.get(field)
         if prev_value != curr_value:
             mismatches.append(f"{field}: previous={prev_value!r} current={curr_value!r}")
+    # code_hashes is compared only when BOTH manifests recorded it: resuming
+    # a run whose orchestrator code changed in between would mix two
+    # behaviours under one run_id, but a manifest written before code
+    # hashing existed must not be treated as a mismatch.
+    if previous.get("code_hashes") is not None and current.get("code_hashes") is not None:
+        if previous["code_hashes"] != current["code_hashes"]:
+            mismatches.append(
+                f"code_hashes: previous={previous['code_hashes']!r} current={current['code_hashes']!r}"
+            )
     return mismatches
 
 

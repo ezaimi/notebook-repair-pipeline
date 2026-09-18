@@ -14,6 +14,29 @@ components into one pipeline invocation per dependency-error record.
       FixApplicator (i5)  -- clone/build/run/re-execute
             |
       ResultLogger (i6)   -- one repair_attempts row per round
+            |
+            | still_failing on a genuinely new error
+            v
+      reclassification (i1 scope + i2 refinement, build_round2_record)
+            |
+      LLMExplainer (i3)  -- explains the NEW error, own record; ALWAYS
+            |
+      repair eligibility check on the reclassified record
+            |  (usable + supported subtype only)
+      RAGRepairAgent (i4) -> FixApplicator (i5) -> ResultLogger (i6)
+
+Round 2 re-enters at classification, not at RAGRepairAgent: the newly
+exposed error is reclassified with the same two classifier stages every
+original row went through, then explained as its own record, and only
+then checked for repair eligibility. Explanation scope is wider than
+repair scope, exactly as in Round 1: a new error that reclassifies as
+system_library or mapping_unknown is still explained, it just never
+reaches RAGRepairAgent. The Round-2 explanation is generated at most once
+per record, from the reclassified record (never from the original Round-1
+record), and its failure is non-blocking - RAGRepairAgent still runs for a
+repair-eligible Round-2 record even if its explanation timed out or was
+malformed. See explain_round_record() and the trigger block in
+process_record().
 
 This module reuses i2-i6's own functions directly (classification,
 PyPI retrieval, proposal validation, Docker execution, row building) - it
@@ -141,6 +164,55 @@ def explain_record(
         "llm": run_llm_explainer.build_llm_metadata(explainer_config),
         "explanation_result": explanation_result,
     }
+
+
+def explain_round_record(
+    record: Dict[str, Any],
+    round_number: int,
+    explainer_config: Dict[str, Any],
+    explainer_template: str,
+    explainer_schema_path: str,
+    run_id: str,
+    index: int,
+) -> Dict[str, Any]:
+    """Generate the explanation for one executed repair round, from the
+    record that round actually processes. For Round 2 that record is the
+    reclassified round2_record built by build_round2_record() - so the
+    explanation input (error_type, error_message, failing_module, the
+    subtypes, root_cause_hint, confidence, scope) reflects the NEWLY
+    exposed error, never the original Round-1 failure.
+
+    Reuses explain_record() function-for-function; there is no second
+    explanation implementation. The only addition is a last-resort guard:
+    explain_one()/explain_record() already convert every anticipated
+    failure (timeout, model unavailable, malformed output, exhausted
+    retries, render error) into a status field rather than an exception,
+    but this wrapper also catches anything unanticipated and records it
+    as a failed explanation. Explanation is a separate objective from
+    repair (O1 vs O2), so an explanation failure must never prevent
+    RAGRepairAgent from running on an otherwise repair-eligible record -
+    the caller relies on this function never raising."""
+    try:
+        explanation = explain_record(
+            record, explainer_config, explainer_template, explainer_schema_path, run_id, index
+        )
+    except Exception as e:
+        explanation = {
+            "run_id": run_id,
+            "created_at": utc_now(),
+            "index": index,
+            "input": run_llm_explainer.build_input_metadata(record),
+            "llm": None,
+            "explanation_result": {
+                "status": "failed",
+                "failure_category": "runtime_error",
+                "explanation_json": None,
+                "validation_errors": ["runtime_error: {}: {}".format(type(e).__name__, e)],
+                "error": "{}: {}".format(type(e).__name__, e),
+            },
+        }
+    explanation["round"] = round_number
+    return explanation
 
 
 # --- excluded-record stub (never calls RAGRepairAgent) -----------------------
@@ -312,11 +384,21 @@ def process_record(
     already_logged: Callable[[Any, str, int], bool],
 ) -> Tuple[Dict[str, Any], List[Tuple[int, Dict[str, Any]]]]:
     """Explanation (always) -> repair eligibility check -> up to
-    min(max_rounds, 2) repair rounds for one i2 record.
+    min(max_rounds, 2) repair rounds for one i2 record. After Round 1, a
+    genuinely new error is reclassified into its own record
+    (build_round2_record) and explained (explain_round_record) regardless
+    of whether it is repair-eligible - explanation scope stays wider than
+    repair scope, as in Round 1. Eligibility then decides only whether
+    Round 2 runs RAGRepairAgent and FixApplicator on that record. A
+    repair-eligible new error thus gets explanation + repair; a
+    non-repairable one (system_library, mapping_unknown, ...) gets its
+    explanation in the trace and no Round-2 repair row.
 
     Never raises for a per-record component failure: explanation failures
     are already captured by explain_record()/explain_one()'s own bounded
-    retry+status contract, and a repair-round exception (PyPI unreachable,
+    retry+status contract (and, for Round 2, by explain_round_record()'s
+    last-resort guard), so a failed explanation never blocks the repair
+    round that follows it; a repair-round exception (PyPI unreachable,
     clone failure, unexpected error) is caught here and recorded as
     "component_error", stopping further rounds for *this* record only -
     the caller's own per-record try/except is the last-resort net for
@@ -333,9 +415,19 @@ def process_record(
     }
     pending_rows: List[Tuple[int, Dict[str, Any]]] = []
 
+    # Round-1 explanation of the ORIGINAL failure - the same explain_record()
+    # call as before Round-2 explanations existed, unchanged. Kept at the
+    # top level of the diagnostics (explanation / explanation_status) for
+    # backward compatibility with every consumer of the trace that predates
+    # Round-2 explanations (evaluation_metrics.explanation_schema_validity_rate,
+    # validate_evaluation_results.check_single_run_id, the human-evaluation
+    # pool selector, the demo builder). It is also attached to Round 1's own
+    # round entry below, so each round carries its own explanation and the
+    # explanation<->round relationship is unambiguous.
     explanation = explain_record(
         record, explainer_config, explainer_template, explainer_schema_path, run_id, original_index
     )
+    explanation["round"] = 1
     diagnostics["explanation_status"] = explanation["explanation_result"]["status"]
     diagnostics["explanation"] = explanation
 
@@ -354,7 +446,15 @@ def process_record(
             i4_stub = build_excluded_repair_stub(record, run_id)
             row = result_logger.build_repair_attempt_row(i4_stub, record, explanation, None, 1)
             pending_rows.append((1, row))
-            diagnostics["rounds"] = [{"round": 1, "status": "excluded", "i4_result": i4_stub}]
+            diagnostics["rounds"] = [
+                {
+                    "round": 1,
+                    "status": "excluded",
+                    "explanation_status": explanation["explanation_result"]["status"],
+                    "explanation": explanation,
+                    "i4_result": i4_stub,
+                }
+            ]
         else:
             diagnostics["rounds"] = [{"round": 1, "status": "skipped_already_logged"}]
         return diagnostics, pending_rows
@@ -364,6 +464,13 @@ def process_record(
     prior_fix_argvs: List[List[str]] = []
     round_number = 1
     effective_max_rounds = min(max_rounds, MAX_ROUNDS_HARD_CAP)
+
+    # round_explanation always holds the explanation of the record the
+    # current round processes. It starts as Round 1's explanation of the
+    # original failure, and is replaced by the Round-2 explanation at the
+    # point the newly exposed error is reclassified (see the trigger
+    # block at the end of the loop body), before Round 2 begins.
+    round_explanation = explanation
 
     while round_number <= effective_max_rounds:
         if already_logged(notebook_execution_id, run_id, round_number):
@@ -388,11 +495,23 @@ def process_record(
                     "round": round_number,
                     "status": "component_error",
                     "error": "{}: {}".format(type(e).__name__, e),
+                    # The round's explanation was already generated before
+                    # the repair failed; keep it so the trace still shows
+                    # what was explained even when nothing was repaired.
+                    "explanation_status": round_explanation["explanation_result"]["status"],
+                    "explanation": round_explanation,
                 }
             )
             break
 
-        i3_for_row = explanation if round_number == 1 else None
+        # Each round's repair_attempts row carries THAT round's own
+        # explanation: Round 1 -> explanation of the original failure,
+        # Round 2 -> explanation of the newly exposed error. The Round-1
+        # explanation is never copied into the Round-2 row, and the Round-2
+        # row's llm_model / prompt_strategy come from the Round-2
+        # explanation record (build_repair_attempt_row reads them from the
+        # i3 record it is given), never inherited from Round 1.
+        i3_for_row = round_explanation
         # Only pass the i5 record when FixApplicator actually executed
         # (status "completed": fixed/still_failing/apply_error). A "skipped"
         # decision (abstained/failed i4, or action "none") is not a real
@@ -406,6 +525,18 @@ def process_record(
         round_entry: Dict[str, Any] = {
             "round": round_number,
             "status": "completed",
+            # This round's own explanation, generated from the record the
+            # round actually processed. Its "input" block is that record's
+            # classification (error_type, error_message, failing_module,
+            # subtypes, root_cause_hint, confidence, scope), so a Round-2
+            # entry is readable on its own: classified record (explanation
+            # .input, also rounds[0].round2_trigger.round2_record) ->
+            # explanation -> repair (i4_result) -> fix application
+            # (i5_result). The full record is deliberately not repeated
+            # here: for Round 1 it is the input record itself, which may
+            # carry cell source, and repeating it per line bloats the trace.
+            "explanation_status": round_explanation["explanation_result"]["status"],
+            "explanation": round_explanation,
             "i4_result": i4_result,
             "i5_result": i5_result,
         }
@@ -414,15 +545,55 @@ def process_record(
         if round_number >= effective_max_rounds:
             break
 
+        # Reclassify the newly exposed error (if any) exactly as every
+        # original row was classified. The trigger dict carries the
+        # reclassified round2_record whenever one was built, i.e. whenever
+        # Round 1 came back still_failing on a genuinely new error - whether
+        # or not that error then turns out to be repair-eligible.
         trigger = evaluate_round2_trigger(i5_result, record)
         round_entry["round2_trigger"] = trigger
+
+        # Explanation scope is wider than repair scope, exactly as in Round
+        # 1: every reclassified new dependency error receives its own
+        # explanation, generated here from the round2_record, BEFORE the
+        # eligibility decision below decides whether RAGRepairAgent and
+        # FixApplicator run on it. A newly exposed system_library or
+        # mapping_unknown error is therefore still explained even though it
+        # cannot be repaired. The explanation is attached to the trigger
+        # dict, next to the round2_record it explains, so it is preserved
+        # in the trace even when no Round 2 executes. It is deliberately
+        # NOT recorded as a rounds[] entry with round == 2: every consumer
+        # of the trace (evaluation_metrics, validate_evaluation_results)
+        # reads a round-2 entry as an executed Round 2, and a non-repairable
+        # new error executes nothing. Under the one-row-per-executed-round
+        # ResultLogger contract such an explanation lives in the trace
+        # only; a repair-eligible one additionally reaches the Round-2 row.
+        # Because this block only runs when round_number < the hard cap,
+        # reclassification and explanation happen at most once per record
+        # (after Round 1) - there is no third round and no explanation loop.
+        next_round = round_number + 1
+        if "round2_record" in trigger and not already_logged(notebook_execution_id, run_id, next_round):
+            round_explanation = explain_round_record(
+                trigger["round2_record"],
+                next_round,
+                explainer_config,
+                explainer_template,
+                explainer_schema_path,
+                run_id,
+                original_index,
+            )
+            trigger["explanation_status"] = round_explanation["explanation_result"]["status"]
+            trigger["explanation"] = round_explanation
+
+        # Repair eligibility controls only whether the next round runs
+        # RAGRepairAgent and FixApplicator - never whether it was explained.
         if not trigger["triggered"]:
             break
 
         if i5_result.get("argv"):
             prior_fix_argvs = prior_fix_argvs + [i5_result["argv"]]
         active_record = trigger["round2_record"]
-        round_number += 1
+        round_number = next_round
 
     diagnostics["rounds"] = rounds
     return diagnostics, pending_rows

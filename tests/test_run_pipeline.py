@@ -1233,3 +1233,717 @@ def test_resume_skip_check_against_a_real_database_prevents_duplicate_rows(tmp_p
         assert already_logged(8, "a-different-run", 1) is False
     finally:
         conn.close()
+
+
+# =============================================================================
+# 12. Round-2 LLMExplainer: the newly exposed error gets its own explanation
+# =============================================================================
+#
+# Round 2 re-enters the pipeline at reclassification, not at
+# RAGRepairAgent. After the new error is reclassified into a round2_record
+# it receives its OWN explanation (from that record, never from the
+# original Round-1 record) before RAGRepairAgent runs on it. Explanation
+# and repair stay separate objectives: an explanation failure must never
+# block a repair-eligible Round-2 attempt. Exactly one explanation per
+# executed round, bounded by the same two-round hard cap.
+
+
+def explanation_json_for(failing_module, summary=None):
+    """A schema-valid explanation whose content is tied to a specific
+    failing module, so Round-1 and Round-2 explanations are distinguishable
+    in the logged rows rather than coincidentally identical."""
+    return json.dumps(
+        {
+            "summary": summary or "The notebook failed because '{}' is missing.".format(failing_module),
+            "root_cause": "The notebook imports '{}', which is not installed.".format(failing_module),
+            "evidence": ["error message names {}".format(failing_module)],
+            "failing_module": failing_module,
+            "explanation_confidence": "high",
+            "limitations": "Only metadata is available.",
+        }
+    )
+
+
+class ExplainerSpy:
+    """Records every prompt LLMExplainer sends and answers each call from a
+    scripted queue. A queue item is either a string (the raw response to
+    return) or an exception instance (raised, so explain_one()'s own
+    timeout/model-unavailable handling is exercised for real)."""
+
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.prompts = []
+
+    def __call__(self, **kwargs):
+        self.prompts.append(kwargs["prompt"])
+        item = self.responses.pop(0)
+        if isinstance(item, BaseException):
+            raise item
+        return item, {}
+
+
+def _two_round_scipy_then_pandas(monkeypatch, explainer_responses):
+    """Shared setup for a cumtrapz record whose Round-1 scipy pin exposes a
+    new, repair-eligible pandas error, so Round 2 fires. Returns
+    (explainer_spy, docker_runner, record)."""
+    spy = ExplainerSpy(explainer_responses)
+    monkeypatch.setattr(run_llm_explainer, "call_ollama", spy)
+    mock_pypi(monkeypatch, "scipy", ["1.13.0", "1.13.1", "1.14.0"])
+
+    def fake_repair_ollama(**kwargs):
+        if "pandas" in kwargs["prompt"]:
+            return ollama_repair_response("install", "pandas", None), {}
+        return ollama_repair_response("pin_version", "scipy", "1.13.1"), {}
+
+    monkeypatch.setattr(rag_repair_agent, "call_ollama", fake_repair_ollama)
+
+    original_retrieve = pypi_retriever.retrieve
+
+    def fake_retrieve(import_name, **kwargs):
+        if import_name == "pandas":
+            mock_pypi(monkeypatch, "pandas", ["2.2.0"])
+        return original_retrieve(import_name, **kwargs)
+
+    monkeypatch.setattr(rag_repair_agent, "retrieve", fake_retrieve)
+
+    runner = SequencedDockerRunner(
+        run_outcomes=[
+            (("ModuleNotFoundError", "No module named 'pandas'"), "FIX_INSTALL_SUCCESS"),
+            ("fixed", "FIX_INSTALL_SUCCESS"),
+        ]
+    )
+    return spy, runner, cumtrapz_record()
+
+
+def _run(record, runner, tmp_path, explainer_config, explainer_template, repair_config, fix_config, max_rounds=2):
+    return process_record(
+        record, 0, "i7-r2-explain", max_rounds,
+        explainer_config, explainer_template, "schemas/explanation.schema.json",
+        repair_config, fix_config, i2_index_for(record), None, runner, tmp_path,
+        always_not_logged,
+    )
+
+
+# --- A. Round-2 explanation is generated, exactly once, from the round2_record
+
+
+def test_round2_generates_its_own_explanation_exactly_once(
+    monkeypatch, tmp_path, explainer_config, explainer_template, repair_config, fix_config
+):
+    spy, runner, record = _two_round_scipy_then_pandas(
+        monkeypatch, [explanation_json_for("scipy"), explanation_json_for("pandas")]
+    )
+
+    diagnostics, pending_rows = _run(record, runner, tmp_path, explainer_config, explainer_template, repair_config, fix_config)
+
+    rounds = diagnostics["rounds"]
+    assert len(rounds) == 2
+    assert rounds[0]["round2_trigger"]["triggered"] is True
+
+    # the new error was reclassified into a fresh record ...
+    r2_record = rounds[0]["round2_trigger"]["round2_record"]
+    assert r2_record["failing_module"] == "pandas"
+    assert r2_record["refined_subtype"] == "missing_package"
+    assert r2_record["context_status"] == "round2_reclassified_from_execution_outcome"
+
+    # ... and LLMExplainer was called exactly twice: once per executed round
+    assert len(spy.prompts) == 2
+
+    # Round 2's explanation was generated from the round2_record, and is
+    # tagged with its round so the relationship is unambiguous
+    r2_expl = rounds[1]["explanation"]
+    assert r2_expl["round"] == 2
+    assert r2_expl["input"]["failing_module"] == "pandas"
+    assert r2_expl["input"]["error_type"] == "ModuleNotFoundError"
+    assert r2_expl["input"]["error_message"] == "No module named 'pandas'"
+    assert r2_expl["input"]["context_status"] == "round2_reclassified_from_execution_outcome"
+    assert rounds[1]["explanation_status"] == "success"
+
+    # Round 1's own entry carries the original-failure explanation, tagged round 1
+    assert rounds[0]["explanation"]["round"] == 1
+    assert rounds[0]["explanation"]["input"]["failing_module"] == "scipy"
+    assert rounds[0]["explanation_status"] == "success"
+
+
+# --- B. the second explanation input is the NEW error context, not Round 1's
+
+
+def test_round2_explanation_prompt_contains_new_error_not_original(
+    monkeypatch, tmp_path, explainer_config, explainer_template, repair_config, fix_config
+):
+    spy, runner, record = _two_round_scipy_then_pandas(
+        monkeypatch, [explanation_json_for("scipy"), explanation_json_for("pandas")]
+    )
+
+    diagnostics, _ = _run(record, runner, tmp_path, explainer_config, explainer_template, repair_config, fix_config)
+
+    # The few-shot template embeds fixed examples (including a scipy/cumtrapz
+    # one) in EVERY prompt, so compare only the record-specific section that
+    # follows the "Now explain this input record." marker.
+    marker = "Now explain this input record."
+    assert marker in spy.prompts[0] and marker in spy.prompts[1]
+    round1_input = spy.prompts[0].split(marker, 1)[1]
+    round2_input = spy.prompts[1].split(marker, 1)[1]
+
+    # Round 1's input section describes the original cumtrapz/scipy failure
+    assert "cannot import name 'cumtrapz'" in round1_input
+    assert "error_type: ImportError" in round1_input
+    assert "root_cause_hint: version_or_api_incompatibility" in round1_input
+    assert "failing_module: scipy" in round1_input
+
+    # Round 2's input section describes the NEW pandas failure with its own
+    # reclassification, and carries none of the original error's context
+    assert "error_message: No module named 'pandas'" in round2_input
+    assert "error_type: ModuleNotFoundError" in round2_input
+    assert "refined_subtype: missing_package" in round2_input
+    assert "failing_module: pandas" in round2_input
+    assert "context_status: round2_reclassified_from_execution_outcome" in round2_input
+    assert "cumtrapz" not in round2_input
+    assert "version_or_api_incompatibility" not in round2_input
+    assert "failing_module: scipy" not in round2_input
+
+    # and the two explanation records are distinct objects with distinct inputs
+    r1_expl, r2_expl = diagnostics["rounds"][0]["explanation"], diagnostics["rounds"][1]["explanation"]
+    assert r1_expl is not r2_expl
+    assert r1_expl["input"] != r2_expl["input"]
+    assert r2_expl["input"]["root_cause_hint"] != r1_expl["input"]["root_cause_hint"]
+
+
+# --- C. each repair_attempts row stores its own round's explanation
+
+
+def test_round1_and_round2_rows_store_their_own_explanations(
+    monkeypatch, tmp_path, explainer_config, explainer_template, repair_config, fix_config
+):
+    spy, runner, record = _two_round_scipy_then_pandas(
+        monkeypatch, [explanation_json_for("scipy"), explanation_json_for("pandas")]
+    )
+
+    _, pending_rows = _run(record, runner, tmp_path, explainer_config, explainer_template, repair_config, fix_config)
+
+    assert [r for r, _ in pending_rows] == [1, 2]
+    row1, row2 = pending_rows[0][1], pending_rows[1][1]
+
+    assert row1["explanation"] is not None
+    assert row2["explanation"] is not None
+    expl1, expl2 = json.loads(row1["explanation"]), json.loads(row2["explanation"])
+    assert expl1["failing_module"] == "scipy"
+    assert expl2["failing_module"] == "pandas"
+    # Round 1's explanation was not copied into the Round 2 row
+    assert row1["explanation"] != row2["explanation"]
+    # and each row's classification columns match its own round's record
+    assert row1["failing_module"] == "scipy" and row1["subtype"] == "wrong_version"
+    assert row2["failing_module"] == "pandas" and row2["subtype"] == "missing_package"
+
+
+# --- D. Round-2 row metadata comes from the Round-2 explanation record
+
+
+def test_round2_row_llm_metadata_comes_from_round2_explanation(
+    monkeypatch, tmp_path, explainer_config, explainer_template, repair_config, fix_config
+):
+    spy, runner, record = _two_round_scipy_then_pandas(
+        monkeypatch, [explanation_json_for("scipy"), explanation_json_for("pandas")]
+    )
+
+    diagnostics, pending_rows = _run(record, runner, tmp_path, explainer_config, explainer_template, repair_config, fix_config)
+    row2 = pending_rows[1][1]
+    r2_expl = diagnostics["rounds"][1]["explanation"]
+
+    # metadata populated (previously NULL for every Round-2 row) ...
+    assert row2["llm_model"] == explainer_config["models"]["primary"]
+    assert row2["prompt_strategy"] == explainer_config["prompt"]["strategy"]
+    # ... and sourced from the Round-2 explanation's own llm block
+    assert row2["llm_model"] == r2_expl["llm"]["llm_model"]
+    assert row2["prompt_strategy"] == r2_expl["llm"]["prompt_strategy"]
+    assert r2_expl["round"] == 2
+
+
+def test_round2_row_metadata_is_not_inherited_from_round1_when_config_differs_per_round(
+    monkeypatch, tmp_path, explainer_config, explainer_template, repair_config, fix_config
+):
+    """Guard against a stale-inheritance regression: if the Round-2
+    explanation record were ever built from a different model than Round
+    1's, the Round-2 row must reflect Round 2's own record, not Round 1's.
+    Simulated by swapping the primary model on the second explain_record()
+    call only."""
+    spy, runner, record = _two_round_scipy_then_pandas(
+        monkeypatch, [explanation_json_for("scipy"), explanation_json_for("pandas")]
+    )
+
+    original_explain_record = run_pipeline.explain_record
+    calls = {"n": 0}
+
+    def explain_record_with_per_round_model(rec, config, template, schema, run_id, index):
+        calls["n"] += 1
+        per_round_config = json.loads(json.dumps(config))
+        if calls["n"] == 2:
+            per_round_config["models"]["primary"] = "model-used-only-in-round-2"
+        return original_explain_record(rec, per_round_config, template, schema, run_id, index)
+
+    monkeypatch.setattr(run_pipeline, "explain_record", explain_record_with_per_round_model)
+
+    diagnostics, pending_rows = _run(record, runner, tmp_path, explainer_config, explainer_template, repair_config, fix_config)
+    row1, row2 = pending_rows[0][1], pending_rows[1][1]
+
+    assert row1["llm_model"] == "gemma2:9b"
+    assert row2["llm_model"] == "model-used-only-in-round-2"
+    assert diagnostics["rounds"][1]["explanation"]["llm"]["llm_model"] == "model-used-only-in-round-2"
+
+
+# --- E. Round-2 explanation failure does not block the repair
+
+
+def test_round2_explanation_timeout_does_not_block_repair(
+    monkeypatch, tmp_path, explainer_config, explainer_template, repair_config, fix_config
+):
+    spy, runner, record = _two_round_scipy_then_pandas(
+        monkeypatch, [explanation_json_for("scipy"), TimeoutError("explainer timed out")]
+    )
+
+    diagnostics, pending_rows = _run(record, runner, tmp_path, explainer_config, explainer_template, repair_config, fix_config)
+    rounds = diagnostics["rounds"]
+    assert len(rounds) == 2
+
+    # the failure is captured, not raised, and attributed to Round 2
+    assert rounds[1]["explanation_status"] == "failed"
+    assert rounds[1]["explanation"]["explanation_result"]["failure_category"] == "timeout"
+    assert rounds[1]["explanation"]["round"] == 2
+    # Round 1's explanation is untouched
+    assert rounds[0]["explanation_status"] == "success"
+
+    # RAGRepairAgent still ran on the Round-2 record and proposed a grounded fix ...
+    assert rounds[1]["i4_result"]["status"] == "success"
+    assert rounds[1]["i4_result"]["final_install_name"] == "pandas"
+    # ... FixApplicator still ran it ...
+    assert rounds[1]["i5_result"]["status"] == "completed"
+    assert rounds[1]["i5_result"]["outcome"] == "fixed"
+    # ... and ResultLogger still gets a Round-2 row for the attempt
+    assert [r for r, _ in pending_rows] == [1, 2]
+    row2 = pending_rows[1][1]
+    assert row2["install_name"] == "pandas"
+    assert row2["outcome"] == "fixed"
+    assert row2["explanation"] is None  # no valid explanation to store
+    assert row2["llm_model"] == "gemma2:9b"  # but the attempted model is recorded
+
+
+def test_round2_explanation_schema_failure_does_not_block_repair(
+    monkeypatch, tmp_path, explainer_config, explainer_template, repair_config, fix_config
+):
+    malformed = json.dumps({"summary": "missing every other required field"})
+    spy, runner, record = _two_round_scipy_then_pandas(monkeypatch, [explanation_json_for("scipy"), malformed])
+
+    diagnostics, pending_rows = _run(record, runner, tmp_path, explainer_config, explainer_template, repair_config, fix_config)
+    rounds = diagnostics["rounds"]
+
+    assert rounds[1]["explanation_status"] == "failed"
+    assert rounds[1]["explanation"]["explanation_result"]["validation_errors"]
+    assert rounds[1]["i4_result"]["final_install_name"] == "pandas"
+    assert rounds[1]["i5_result"]["outcome"] == "fixed"
+    assert pending_rows[1][1]["explanation"] is None
+    assert pending_rows[1][1]["install_name"] == "pandas"
+
+
+def test_round2_explanation_unexpected_exception_is_caught_and_repair_still_runs(
+    monkeypatch, tmp_path, explainer_config, explainer_template, repair_config, fix_config
+):
+    """explain_round_record()'s last-resort guard: even an exception that
+    explain_one()/explain_record() do not anticipate is turned into a
+    failed explanation for Round 2 rather than aborting the round."""
+    spy, runner, record = _two_round_scipy_then_pandas(monkeypatch, [explanation_json_for("scipy")])
+
+    original_explain_record = run_pipeline.explain_record
+    calls = {"n": 0}
+
+    def explain_record_that_explodes_on_round2(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("unexpected explainer crash")
+        return original_explain_record(*args, **kwargs)
+
+    monkeypatch.setattr(run_pipeline, "explain_record", explain_record_that_explodes_on_round2)
+
+    diagnostics, pending_rows = _run(record, runner, tmp_path, explainer_config, explainer_template, repair_config, fix_config)
+    rounds = diagnostics["rounds"]
+
+    assert len(rounds) == 2
+    assert rounds[1]["explanation_status"] == "failed"
+    assert rounds[1]["explanation"]["explanation_result"]["failure_category"] == "runtime_error"
+    assert "unexpected explainer crash" in rounds[1]["explanation"]["explanation_result"]["error"]
+    assert rounds[1]["i5_result"]["outcome"] == "fixed"
+    assert len(pending_rows) == 2
+
+
+# --- F. no Round 2 means no second explanation
+
+
+def test_round1_fixed_means_exactly_one_explanation(
+    monkeypatch, tmp_path, explainer_config, explainer_template, repair_config, fix_config
+):
+    spy = ExplainerSpy([explanation_json_for("sklearn")])
+    monkeypatch.setattr(run_llm_explainer, "call_ollama", spy)
+    mock_pypi(monkeypatch, "scikit-learn", ["1.7.2"])
+    monkeypatch.setattr(
+        rag_repair_agent, "call_ollama",
+        lambda **kwargs: (ollama_repair_response("install", "scikit-learn", None), {}),
+    )
+    runner = SequencedDockerRunner(run_outcomes=[("fixed", "FIX_INSTALL_SUCCESS")])
+
+    diagnostics, _ = _run(sklearn_record(), runner, tmp_path, explainer_config, explainer_template, repair_config, fix_config)
+
+    assert diagnostics["rounds"][0]["i5_result"]["outcome"] == "fixed"
+    assert len(spy.prompts) == 1
+
+
+def test_same_error_repeated_means_exactly_one_explanation(
+    monkeypatch, tmp_path, explainer_config, explainer_template, repair_config, fix_config
+):
+    spy = ExplainerSpy([explanation_json_for("sklearn")])
+    monkeypatch.setattr(run_llm_explainer, "call_ollama", spy)
+    mock_pypi(monkeypatch, "scikit-learn", ["1.7.2"])
+    monkeypatch.setattr(
+        rag_repair_agent, "call_ollama",
+        lambda **kwargs: (ollama_repair_response("install", "scikit-learn", None), {}),
+    )
+    # the same sklearn error comes back after the fix -> same_as_original_error
+    runner = SequencedDockerRunner(
+        run_outcomes=[(("ModuleNotFoundError", "No module named 'sklearn'"), "FIX_INSTALL_SUCCESS")]
+    )
+
+    diagnostics, _ = _run(sklearn_record(), runner, tmp_path, explainer_config, explainer_template, repair_config, fix_config)
+
+    assert diagnostics["rounds"][0]["round2_trigger"]["triggered"] is False
+    assert diagnostics["rounds"][0]["round2_trigger"]["reason"] == "same_as_original_error"
+    assert len(diagnostics["rounds"]) == 1
+    assert len(spy.prompts) == 1
+
+
+def _sklearn_round1_exposing(monkeypatch, new_error, explainer_responses):
+    """Shared setup: an sklearn record whose Round-1 install succeeds but
+    re-execution exposes `new_error`. Spies on run_repair_agent() itself so
+    a test can assert exactly how many times RAGRepairAgent was entered."""
+    spy = ExplainerSpy(explainer_responses)
+    monkeypatch.setattr(run_llm_explainer, "call_ollama", spy)
+    mock_pypi(monkeypatch, "scikit-learn", ["1.7.2"])
+    monkeypatch.setattr(
+        rag_repair_agent, "call_ollama",
+        lambda **kwargs: (ollama_repair_response("install", "scikit-learn", None), {}),
+    )
+
+    original_run_repair_agent = rag_repair_agent.run_repair_agent
+    repair_calls = []
+
+    def spying_run_repair_agent(record, config, run_id=None):
+        repair_calls.append(record["failing_module"])
+        return original_run_repair_agent(record, config, run_id=run_id)
+
+    monkeypatch.setattr(rag_repair_agent, "run_repair_agent", spying_run_repair_agent)
+
+    runner = SequencedDockerRunner(run_outcomes=[(new_error, "FIX_INSTALL_SUCCESS")])
+    return spy, repair_calls, runner, sklearn_record()
+
+
+@pytest.mark.parametrize(
+    "new_error, expected_reason_prefix, expected_subtype",
+    [
+        # newly exposed system library: reclassified as excluded -> not repair-eligible
+        (("ImportError", "libxcb.so.1: cannot open shared object file: No such file or directory"),
+         "new_error_not_repair_eligible", "system_library"),
+        # newly exposed ambiguous local module: reclassified as mapping_unknown
+        (("ModuleNotFoundError", "No module named 'utils'"),
+         "new_error_not_repair_eligible", "mapping_unknown"),
+    ],
+)
+def test_non_repairable_new_error_is_explained_but_never_repaired(
+    monkeypatch, tmp_path, explainer_config, explainer_template, repair_config, fix_config,
+    new_error, expected_reason_prefix, expected_subtype,
+):
+    """Explanation scope is wider than repair scope, as in Round 1. A newly
+    exposed error that reclassifies as system_library or mapping_unknown
+    still receives its own explanation, generated after reclassification and
+    before the eligibility decision. Eligibility then stops Round 2, so
+    RAGRepairAgent and FixApplicator never run on it and no Round-2
+    repair_attempts row is written. The explanation is preserved in the
+    trace on the trigger dict, next to the round2_record it explains, and
+    is deliberately not a rounds[] entry (every trace consumer reads a
+    round == 2 entry as an executed Round 2)."""
+    spy, repair_calls, runner, record = _sklearn_round1_exposing(
+        monkeypatch, new_error, [explanation_json_for("sklearn"), explanation_json_for(expected_subtype)]
+    )
+
+    diagnostics, pending_rows = _run(record, runner, tmp_path, explainer_config, explainer_template, repair_config, fix_config)
+
+    trigger = diagnostics["rounds"][0]["round2_trigger"]
+    assert trigger["triggered"] is False
+    assert trigger["reason"].startswith(expected_reason_prefix)
+    assert trigger["round2_record"]["refined_subtype"] == expected_subtype
+
+    # the new error WAS explained: a second LLMExplainer call, from the
+    # reclassified record, tagged as the Round-2 explanation ...
+    assert len(spy.prompts) == 2
+    assert "explanation" in trigger
+    assert trigger["explanation_status"] == "success"
+    assert trigger["explanation"]["round"] == 2
+    assert trigger["explanation"]["input"]["error_type"] == new_error[0]
+    assert trigger["explanation"]["input"]["error_message"] == new_error[1]
+    assert trigger["explanation"]["input"]["refined_subtype"] == expected_subtype
+    assert trigger["explanation"]["input"]["scope_status"] == "excluded"
+    assert trigger["explanation"]["input"]["context_status"] == "round2_reclassified_from_execution_outcome"
+    round2_input = spy.prompts[1].split("Now explain this input record.", 1)[1]
+    assert new_error[1] in round2_input
+    assert "failing_module: sklearn" not in round2_input
+
+    # ... but RAGRepairAgent was entered exactly once (Round 1, sklearn),
+    # never for the new error, and FixApplicator ran only Round 1
+    assert repair_calls == ["sklearn"]
+    assert len([c for c in runner.calls if c[:2] == ["docker", "run"]]) == 1
+
+    # no executed Round 2: no rounds[] entry with round 2, no Round-2 row
+    assert len(diagnostics["rounds"]) == 1
+    assert [r for r, _ in pending_rows] == [1]
+    # so under the one-row-per-executed-round contract the Round-2
+    # explanation exists in the trace only, and the Round-1 row keeps
+    # Round 1's own explanation
+    assert json.loads(pending_rows[0][1]["explanation"])["failing_module"] == "sklearn"
+
+
+def test_non_repairable_new_error_explanation_failure_is_captured_not_raised(
+    monkeypatch, tmp_path, explainer_config, explainer_template, repair_config, fix_config
+):
+    """Non-blocking holds on the non-repairable path too: a failed Round-2
+    explanation is recorded on the trigger and the record still finishes
+    cleanly with its Round-1 row."""
+    new_error = ("ImportError", "libxcb.so.1: cannot open shared object file: No such file or directory")
+    spy, repair_calls, runner, record = _sklearn_round1_exposing(
+        monkeypatch, new_error, [explanation_json_for("sklearn"), TimeoutError("explainer timed out")]
+    )
+
+    diagnostics, pending_rows = _run(record, runner, tmp_path, explainer_config, explainer_template, repair_config, fix_config)
+
+    trigger = diagnostics["rounds"][0]["round2_trigger"]
+    assert trigger["triggered"] is False
+    assert trigger["explanation_status"] == "failed"
+    assert trigger["explanation"]["explanation_result"]["failure_category"] == "timeout"
+    assert trigger["explanation"]["round"] == 2
+    assert repair_calls == ["sklearn"]
+    assert len(diagnostics["rounds"]) == 1
+    assert len(pending_rows) == 1
+    assert diagnostics["rounds"][0]["explanation_status"] == "success"
+
+
+def test_repair_eligible_new_error_explanation_is_on_trigger_and_on_round2_entry(
+    monkeypatch, tmp_path, explainer_config, explainer_template, repair_config, fix_config
+):
+    """For a repair-eligible new error the single Round-2 explanation is
+    reachable both where every reclassified error's explanation lives
+    (round2_trigger.explanation) and on the executed Round-2 entry, as the
+    same record - and it reaches the Round-2 repair_attempts row."""
+    spy, runner, record = _two_round_scipy_then_pandas(
+        monkeypatch, [explanation_json_for("scipy"), explanation_json_for("pandas")]
+    )
+
+    diagnostics, pending_rows = _run(record, runner, tmp_path, explainer_config, explainer_template, repair_config, fix_config)
+
+    trigger = diagnostics["rounds"][0]["round2_trigger"]
+    assert trigger["triggered"] is True
+    assert trigger["explanation"] is diagnostics["rounds"][1]["explanation"]
+    assert trigger["explanation"]["round"] == 2
+    assert trigger["explanation"]["input"]["failing_module"] == "pandas"
+    assert len(spy.prompts) == 2
+    assert json.loads(pending_rows[1][1]["explanation"])["failing_module"] == "pandas"
+
+
+def test_no_new_error_means_no_reclassification_and_no_second_explanation(
+    monkeypatch, tmp_path, explainer_config, explainer_template, repair_config, fix_config
+):
+    """When Round 1 ends still_failing on the SAME error, nothing new was
+    exposed: no round2_record is built, so there is nothing to explain."""
+    spy, repair_calls, runner, record = _sklearn_round1_exposing(
+        monkeypatch, ("ModuleNotFoundError", "No module named 'sklearn'"), [explanation_json_for("sklearn")]
+    )
+
+    diagnostics, pending_rows = _run(record, runner, tmp_path, explainer_config, explainer_template, repair_config, fix_config)
+
+    trigger = diagnostics["rounds"][0]["round2_trigger"]
+    assert trigger["reason"] == "same_as_original_error"
+    assert "round2_record" not in trigger
+    assert "explanation" not in trigger
+    assert len(spy.prompts) == 1
+    assert repair_calls == ["sklearn"]
+    assert len(pending_rows) == 1
+
+
+def test_max_rounds_1_never_reclassifies_or_explains_a_new_error(
+    monkeypatch, tmp_path, explainer_config, explainer_template, repair_config, fix_config
+):
+    """With a one-round budget no Round 2 can ever be considered, so the new
+    error is neither reclassified nor explained - the explanation of a
+    Round-2 error exists only where a Round 2 could follow."""
+    spy, repair_calls, runner, record = _sklearn_round1_exposing(
+        monkeypatch, ("ModuleNotFoundError", "No module named 'pandas'"), [explanation_json_for("sklearn")]
+    )
+
+    diagnostics, pending_rows = _run(
+        record, runner, tmp_path, explainer_config, explainer_template, repair_config, fix_config, max_rounds=1
+    )
+
+    assert len(diagnostics["rounds"]) == 1
+    assert "round2_trigger" not in diagnostics["rounds"][0]
+    assert len(spy.prompts) == 1
+    assert repair_calls == ["sklearn"]
+    assert len(pending_rows) == 1
+
+
+
+# --- G. the hard cap bounds explanations too: never a third
+
+
+def test_hard_cap_yields_at_most_two_explanations_even_if_errors_keep_appearing(
+    monkeypatch, tmp_path, explainer_config, explainer_template, repair_config, fix_config
+):
+    # Every round exposes yet another eligible error; without the cap this
+    # would recurse indefinitely. The queue holds a third explanation on
+    # purpose - it must never be consumed.
+    spy, runner, record = _two_round_scipy_then_pandas(
+        monkeypatch,
+        [explanation_json_for("scipy"), explanation_json_for("pandas"), explanation_json_for("never-explained")],
+    )
+    # Round 2's re-execution exposes a THIRD eligible error instead of fixing
+    runner.run_outcomes[1] = (("ModuleNotFoundError", "No module named 'numpy'"), "FIX_INSTALL_SUCCESS")
+
+    diagnostics, pending_rows = _run(
+        record, runner, tmp_path, explainer_config, explainer_template, repair_config, fix_config, max_rounds=5
+    )
+
+    assert len(diagnostics["rounds"]) == 2
+    assert diagnostics["rounds"][1]["i5_result"]["outcome"] == "still_failing"
+    assert diagnostics["rounds"][1]["i5_result"]["new_error_message"] == "No module named 'numpy'"
+    assert "round2_trigger" not in diagnostics["rounds"][1]  # no evaluation of a third round
+    assert len(pending_rows) == 2
+    assert len(spy.prompts) == 2
+    assert len(spy.responses) == 1  # the third scripted response was never used
+
+
+def test_each_round_is_explained_exactly_once_not_repeatedly(
+    monkeypatch, tmp_path, explainer_config, explainer_template, repair_config, fix_config
+):
+    spy, runner, record = _two_round_scipy_then_pandas(
+        monkeypatch, [explanation_json_for("scipy"), explanation_json_for("pandas")]
+    )
+
+    diagnostics, _ = _run(record, runner, tmp_path, explainer_config, explainer_template, repair_config, fix_config)
+
+    rounds_explained = [r["explanation"]["round"] for r in diagnostics["rounds"]]
+    assert rounds_explained == [1, 2]
+    assert len(spy.prompts) == 2
+
+
+def test_already_logged_round2_is_not_re_explained(
+    monkeypatch, tmp_path, explainer_config, explainer_template, repair_config, fix_config
+):
+    """Resume semantics: if Round 2 is already in the database, the round is
+    skipped before its explanation would be generated - no wasted LLM call."""
+    spy, runner, record = _two_round_scipy_then_pandas(
+        monkeypatch, [explanation_json_for("scipy"), explanation_json_for("pandas")]
+    )
+
+    def round2_already_logged(notebook_execution_id, run_id, round_number):
+        return round_number == 2
+
+    diagnostics, pending_rows = process_record(
+        record, 0, "i7-r2-explain", 2,
+        explainer_config, explainer_template, "schemas/explanation.schema.json",
+        repair_config, fix_config, i2_index_for(record), None, runner, tmp_path,
+        round2_already_logged,
+    )
+
+    assert diagnostics["rounds"][1]["status"] == "skipped_already_logged"
+    assert len(pending_rows) == 1
+    assert len(spy.prompts) == 1
+
+
+# --- H. Round-1 behaviour is unchanged
+
+
+def test_one_round_record_behaviour_is_unchanged(
+    monkeypatch, tmp_path, explainer_config, explainer_template, repair_config, fix_config
+):
+    spy = ExplainerSpy([explanation_json_for("sklearn")])
+    monkeypatch.setattr(run_llm_explainer, "call_ollama", spy)
+    mock_pypi(monkeypatch, "scikit-learn", ["1.7.2"])
+    monkeypatch.setattr(
+        rag_repair_agent, "call_ollama",
+        lambda **kwargs: (ollama_repair_response("install", "scikit-learn", None), {}),
+    )
+    runner = SequencedDockerRunner(run_outcomes=[("fixed", "FIX_INSTALL_SUCCESS")])
+
+    diagnostics, pending_rows = _run(sklearn_record(), runner, tmp_path, explainer_config, explainer_template, repair_config, fix_config)
+
+    # one explanation, of the original failure, still at the top level for
+    # every pre-existing consumer of the trace
+    assert len(spy.prompts) == 1
+    assert diagnostics["explanation_status"] == "success"
+    assert diagnostics["explanation"]["input"]["failing_module"] == "sklearn"
+    assert diagnostics["explanation"]["round"] == 1
+    # and mirrored into Round 1's own entry, as the same record
+    assert diagnostics["rounds"][0]["explanation"] is diagnostics["explanation"]
+    # same repair flow and same single logged row as before
+    assert diagnostics["rounds"][0]["i4_result"]["final_install_name"] == "scikit-learn"
+    assert diagnostics["rounds"][0]["i5_result"]["outcome"] == "fixed"
+    assert len(pending_rows) == 1
+    row1 = pending_rows[0][1]
+    assert row1["round"] == 1
+    assert json.loads(row1["explanation"])["failing_module"] == "sklearn"
+    assert row1["llm_model"] == "gemma2:9b"
+
+
+def test_excluded_record_round_entry_carries_its_explanation(
+    monkeypatch, explainer_config, explainer_template, repair_config, fix_config
+):
+    """The excluded-record path (explained, never repaired) now also exposes
+    the explanation on its round entry, consistently with executed rounds."""
+    spy = ExplainerSpy([explanation_json_for("libxcb.so.1")])
+    monkeypatch.setattr(run_llm_explainer, "call_ollama", spy)
+
+    record = system_library_record()
+    diagnostics, pending_rows = process_record(
+        record, 0, "i7-r2-explain", 2,
+        explainer_config, explainer_template, "schemas/explanation.schema.json",
+        repair_config, fix_config, i2_index_for(record), None, RefusingRunner(), None,
+        always_not_logged,
+    )
+
+    assert diagnostics["rounds"][0]["status"] == "excluded"
+    assert diagnostics["rounds"][0]["explanation"] is diagnostics["explanation"]
+    assert diagnostics["rounds"][0]["explanation_status"] == "success"
+    assert len(spy.prompts) == 1
+    assert len(pending_rows) == 1
+
+
+def test_round2_explanation_round_trips_through_result_logger_schema(
+    monkeypatch, tmp_path, explainer_config, explainer_template, repair_config, fix_config
+):
+    """End to end against a real SQLite repair_attempts table: the existing
+    schema stores both rounds' explanations with no migration."""
+    spy, runner, record = _two_round_scipy_then_pandas(
+        monkeypatch, [explanation_json_for("scipy"), explanation_json_for("pandas")]
+    )
+    _, pending_rows = _run(record, runner, tmp_path, explainer_config, explainer_template, repair_config, fix_config)
+
+    conn = open_repair_attempts_db(tmp_path / "db.sqlite")
+    try:
+        for _, row in pending_rows:
+            result_logger.insert_row(conn, row)
+        stored = conn.execute(
+            "SELECT round, explanation, llm_model, prompt_strategy, failing_module, subtype "
+            "FROM repair_attempts WHERE notebook_execution_id = ? ORDER BY round",
+            (record["notebook_execution_id"],),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    assert [s[0] for s in stored] == [1, 2]
+    assert json.loads(stored[0][1])["failing_module"] == "scipy"
+    assert json.loads(stored[1][1])["failing_module"] == "pandas"
+    assert stored[1][2] == "gemma2:9b" and stored[1][3] == "few_shot"
+    assert stored[1][4] == "pandas" and stored[1][5] == "missing_package"

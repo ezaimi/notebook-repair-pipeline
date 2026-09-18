@@ -461,15 +461,207 @@ def overall_grounded_proposal_coverage_rate(trace: List[Dict[str, Any]]) -> Opti
 
 
 # --- explanation coverage ---------------------------------------------------
+#
+# Three explanation views, each with an explicit denominator (methodology
+# "Explanation metrics"). They are RECORD-level: one explanation record per
+# encountered dependency error, regardless of how many LLM attempts
+# (retries) that record needed. Retries are reported separately by
+# explanation_call_counts() and never inflate a record count.
+#
+#   A. original_explanation_schema_validity_rate
+#        valid original-failure explanations / notebooks processed
+#        (one record per notebook; == the pre-Round-2-explanation metric,
+#        so it stays directly comparable with the frozen Gemma/Qwen runs)
+#   B. round2_explanation_schema_validity_rate
+#        valid Round-2 explanations / Round-2 explanation records
+#        (one record per newly reclassified Round-2 error that was
+#        explained - INCLUDING errors later excluded from repair, which
+#        exist in the trace only; never restricted to repair-eligible,
+#        LLM-reached, or executed-round populations)
+#   C. combined_explanation_schema_validity_rate
+#        (A.valid + B.valid) / (A.processed + B.processed)
+#
+# None of these touches any repair metric: repair-agent invocations are
+# counted from i4_result entries only (_all_i4_results), and an
+# explanation record is never an i4_result.
 
-def explanation_schema_validity_rate(trace: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """valid (status == "success") / records actually explanation-processed
-    in THIS run. The denominator is always what was actually executed here
-    - never claim 214 unless excluded records were also explicitly run
-    through explain_record() in this same invocation (methodology §8)."""
+
+def _explanation_status(explanation: Optional[Dict[str, Any]]) -> Optional[str]:
+    if not explanation:
+        return None
+    return (explanation.get("explanation_result") or {}).get("status")
+
+
+def _explanation_attempts(explanation: Optional[Dict[str, Any]]) -> int:
+    """Underlying LLM attempts (including the explainer's own bounded
+    retries) behind ONE explanation record. 0 when unavailable (e.g. a
+    render failure that never reached the model)."""
+    if not explanation:
+        return 0
+    return int((explanation.get("explanation_result") or {}).get("attempts") or 0)
+
+
+def original_explanation(diagnostics: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The Round-1 explanation of the ORIGINAL failure: the top-level
+    `explanation` record, which scripts/run_pipeline.py keeps at the top
+    level for exactly this purpose (and mirrors, as the same record, onto
+    the Round-1 entry - never counted twice)."""
+    return diagnostics.get("explanation")
+
+
+def round2_explanation(diagnostics: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The single Round-2 explanation record for one notebook, or None.
+
+    Authoritative location: rounds[0].round2_trigger.explanation - the
+    orchestrator attaches the explanation there whenever a genuinely new
+    error was reclassified into a round2_record and explained, whether or
+    not that error then proved repair-eligible. For a non-repairable new
+    error (system_library, mapping_unknown, ...) this is the ONLY place the
+    explanation exists: no Round-2 round entry and no repair_attempts row
+    are written for it, so the trace is the authoritative source.
+
+    When Round 2 did execute, the executed Round-2 entry carries the same
+    record again (rounds[1].explanation). That duplicate representation is
+    deliberately NOT a second explanation: this function returns exactly
+    one record per notebook, preferring the trigger's copy and falling back
+    to the executed entry's only if the trigger lacks one. Old traces
+    (frozen I8/I9 runs, produced before Round-2 explanations existed)
+    have neither and yield None, so every Round-2 count is 0 for them."""
+    rounds = diagnostics.get("rounds", [])
+    round1_entry = _round_entry(rounds, 1)
+    trigger = (round1_entry or {}).get("round2_trigger") or {}
+    explanation = trigger.get("explanation")
+    if explanation is not None:
+        return explanation
+    round2_entry = _round_entry(rounds, 2)
+    if round2_entry is not None:
+        return round2_entry.get("explanation")
+    return None
+
+
+def _reclassified_new_error(diagnostics: Dict[str, Any]) -> bool:
+    """True if Round 1 exposed a genuinely new error that the orchestrator
+    reclassified into a round2_record (regardless of repair eligibility)."""
+    rounds = diagnostics.get("rounds", [])
+    round1_entry = _round_entry(rounds, 1)
+    trigger = (round1_entry or {}).get("round2_trigger") or {}
+    return "round2_record" in trigger
+
+
+def _validity_block(explanations: List[Dict[str, Any]]) -> Dict[str, Any]:
+    valid = sum(1 for e in explanations if _explanation_status(e) == "success")
+    processed = len(explanations)
+    return {"valid": valid, "failed": processed - valid, "processed": processed, "rate": _rate(valid, processed)}
+
+
+def original_explanation_schema_validity_rate(trace: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """A. valid original-failure explanations / notebooks processed in THIS
+    run (one explanation record per notebook, read from the top-level
+    explanation_status exactly as before Round-2 explanations existed, so
+    the number is directly comparable with the frozen Gemma/Qwen runs).
+    The denominator is always what was actually executed here - never
+    claim 214 unless excluded records were also explicitly run through
+    explain_record() in this same invocation (methodology §8)."""
     total = len(trace)
     valid = sum(1 for d in trace if d.get("explanation_status") == "success")
-    return {"valid": valid, "processed": total, "rate": _rate(valid, total)}
+    return {"valid": valid, "failed": total - valid, "processed": total, "rate": _rate(valid, total)}
+
+
+def explanation_schema_validity_rate(trace: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Backward-compatible alias of original_explanation_schema_validity_rate()
+    (metric A) under the name, and with the exact {valid, processed, rate}
+    shape, that every pre-Round-2-explanation report used (frozen I8/I9
+    summary CSVs serialise this dict verbatim). Meaning and denominator are
+    unchanged: original-failure explanations over notebooks processed. It
+    does NOT include Round-2 explanations - use round2_/combined_ for those."""
+    block = original_explanation_schema_validity_rate(trace)
+    return {"valid": block["valid"], "processed": block["processed"], "rate": block["rate"]}
+
+
+def round2_explanation_schema_validity_rate(trace: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """B. valid Round-2 explanations / Round-2 explanation records. The
+    denominator is every newly reclassified Round-2 dependency error that
+    received an explanation record (success OR failed), including errors
+    later excluded from repair that exist only in the trace. It is not the
+    repair-eligible subset, not the Round-2-LLM-reached subset, and not the
+    executed-Round-2-row subset. Counted once per notebook via
+    round2_explanation()."""
+    explanations = [e for e in (round2_explanation(d) for d in trace) if e is not None]
+    block = _validity_block(explanations)
+    # Population diagnostics: how the explained Round-2 errors split by
+    # repair eligibility (explanation scope is broader than repair scope),
+    # and whether any reclassified error somehow went unexplained.
+    triggered = not_triggered = 0
+    reclassified = 0
+    for d in trace:
+        if not _reclassified_new_error(d):
+            continue
+        reclassified += 1
+        trig = (_round_entry(d.get("rounds", []), 1) or {}).get("round2_trigger") or {}
+        if round2_explanation(d) is None:
+            continue
+        if trig.get("triggered"):
+            triggered += 1
+        else:
+            not_triggered += 1
+    block["reclassified_new_errors"] = reclassified
+    block["reclassified_without_explanation"] = reclassified - block["processed"]
+    block["explained_repair_eligible"] = triggered
+    block["explained_not_repair_eligible_trace_only"] = not_triggered
+    return block
+
+
+def combined_explanation_schema_validity_rate(trace: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """C. (valid original + valid Round-2) / (original records + Round-2
+    records). A descriptive total-reliability figure for the explanation
+    component; it never replaces metric A, whose notebook-level denominator
+    is the comparable one."""
+    original = original_explanation_schema_validity_rate(trace)
+    round2 = round2_explanation_schema_validity_rate(trace)
+    valid = original["valid"] + round2["valid"]
+    processed = original["processed"] + round2["processed"]
+    return {"valid": valid, "failed": processed - valid, "processed": processed, "rate": _rate(valid, processed)}
+
+
+def explanation_call_counts(trace: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Explanation RECORDS versus underlying LLM ATTEMPTS, kept apart.
+    `*_records` are what the validity rates are computed over (one per
+    encountered error). `*_llm_attempts` sum each record's own `attempts`
+    field, so a record that needed the explainer's bounded retry counts
+    once as a record and twice (or more) as attempts. Never use attempts
+    as a validity denominator."""
+    originals = [e for e in (original_explanation(d) for d in trace) if e is not None]
+    round2s = [e for e in (round2_explanation(d) for d in trace) if e is not None]
+    original_attempts = sum(_explanation_attempts(e) for e in originals)
+    round2_attempts = sum(_explanation_attempts(e) for e in round2s)
+    return {
+        "original_records": len(trace),
+        "round2_records": len(round2s),
+        "total_records": len(trace) + len(round2s),
+        "original_llm_attempts": original_attempts,
+        "round2_llm_attempts": round2_attempts,
+        "total_llm_attempts": original_attempts + round2_attempts,
+        "records_with_retry": sum(1 for e in originals + round2s if _explanation_attempts(e) > 1),
+    }
+
+
+def explanation_metrics(trace: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """All three explanation views plus the record/attempt counts, in one
+    block. Kept separate from every repair metric in compute_all_metrics()."""
+    return {
+        "original_explanation_schema_validity": original_explanation_schema_validity_rate(trace),
+        "round2_explanation_schema_validity": round2_explanation_schema_validity_rate(trace),
+        "combined_explanation_schema_validity": combined_explanation_schema_validity_rate(trace),
+        "call_counts": explanation_call_counts(trace),
+        "note": (
+            "Record-level schema validity (one record per encountered dependency error). "
+            "A: original failures / notebooks processed - comparable with pre-Round-2-explanation runs. "
+            "B: Round-2 explanations / newly reclassified Round-2 errors that were explained, INCLUDING "
+            "non-repairable ones that exist in the trace only. C: A+B combined. Retries are counted in "
+            "call_counts.*_llm_attempts, never as extra records. None of these are human-evaluated; the "
+            "human study covered original-failure explanations only."
+        ),
+    }
 
 
 # --- top-level report --------------------------------------------------------
@@ -512,8 +704,17 @@ def compute_all_metrics(
             "grounded_proposal_rate_among_llm_invocations": grounded_proposal_rate_among_llm_invocations(trace),
             "overall_grounded_proposal_coverage_rate": overall_grounded_proposal_coverage_rate(trace),
             "subtype_level_repair_success": subtype_level_repair_success(records),
+            # Backward-compatible alias of explanation.original_explanation_
+            # schema_validity (metric A): the ORIGINAL-failure explanation
+            # rate over notebooks processed, exactly as every frozen I8/I9
+            # report computed it. Round-2 explanations are reported under
+            # "explanation" below, never folded into this number.
             "explanation_schema_validity": explanation_schema_validity_rate(trace),
         },
+        # Explanation component metrics, deliberately separate from the
+        # repair metrics above: a Round-2 explanation call is never a
+        # repair-agent invocation, and nothing here feeds any repair rate.
+        "explanation": explanation_metrics(trace),
         "failure_breakdown": failure_breakdown(records),
         "round2_summary": {
             "eligible": sum(1 for r in records if r["round2_eligible"]),

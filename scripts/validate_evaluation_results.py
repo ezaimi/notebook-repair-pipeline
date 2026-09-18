@@ -116,6 +116,10 @@ def check_round2_only_after_valid_trigger(trace: List[Dict[str, Any]]) -> CheckR
 
 def check_single_run_id(run_id: str, trace: List[Dict[str, Any]], rows: List[Dict[str, Any]]) -> CheckResult:
     trace_run_ids = {d.get("explanation", {}).get("run_id") for d in trace if d.get("explanation")}
+    # Round-2 explanations (when present) must carry the same run id too.
+    trace_run_ids |= {
+        e.get("run_id") for e in (metrics.round2_explanation(d) for d in trace) if e is not None
+    }
     row_run_ids = {r.get("run_id") for r in rows}
     offending_trace = trace_run_ids - {run_id}
     offending_rows = row_run_ids - {run_id}
@@ -157,14 +161,41 @@ def check_manifest_hash_consistency(manifest: Dict[str, Any], root: Path) -> Che
     """Recomputes config/prompt hashes right now and compares against what
     the manifest recorded at run-start - a mismatch means prompts/configs
     changed after this run began (or between the dev run and a later
-    resumed/final run under the same configuration)."""
-    current_hashes = em.build_config_hashes(root)
+    resumed/final run under the same configuration).
+
+    Recomputes against the config paths this run actually recorded in
+    manifest["config_paths"] (e.g. a sibling config/*.kiste.yaml for a
+    non-default LLM provider), not always the hardcoded Gemma defaults -
+    mirrors the same fix already applied to build_manifest() in
+    evaluation_manifest.py. Falls back to DEFAULT_HASHED_PATHS's own
+    default for any path config_paths doesn't specify, so a manifest using
+    the default Gemma paths (every existing I8 run) is checked exactly as
+    before."""
+    config_paths = manifest.get("config_paths", {})
+    hashed_paths = dict(em.DEFAULT_HASHED_PATHS)
+    hashed_paths["llm_explainer_config"] = config_paths.get("explainer_config", hashed_paths["llm_explainer_config"])
+    hashed_paths["rag_repair_config"] = config_paths.get("repair_config", hashed_paths["rag_repair_config"])
+    hashed_paths["fix_applicator_config"] = config_paths.get("fix_config", hashed_paths["fix_applicator_config"])
+
+    current_hashes = em.build_config_hashes(root, hashed_paths)
     recorded_hashes = manifest.get("config_hashes", {})
     mismatches = {
         name: {"recorded": recorded_hashes.get(name), "current": current_hashes.get(name)}
         for name in current_hashes
         if current_hashes.get(name) != recorded_hashes.get(name)
     }
+    # code_hashes (orchestrator/component source files) is a newer, optional
+    # block: compared only when this manifest recorded it, so frozen I8/I9
+    # manifests - which predate it - are checked exactly as before.
+    recorded_code_hashes = manifest.get("code_hashes")
+    if recorded_code_hashes is not None:
+        current_code_hashes = em.build_code_hashes(root)
+        for name in current_code_hashes:
+            if current_code_hashes.get(name) != recorded_code_hashes.get(name):
+                mismatches[f"code:{name}"] = {
+                    "recorded": recorded_code_hashes.get(name),
+                    "current": current_code_hashes.get(name),
+                }
     return CheckResult("manifest_config_hash_consistency", not mismatches, json.dumps(mismatches))
 
 
@@ -188,6 +219,150 @@ def check_result_logger_reconciliation(trace: List[Dict[str, Any]], rows: List[D
         "result_logger_row_reconciliation",
         passed,
         f"missing_rows={sorted(missing, key=str)} unexpected_rows={sorted(unexpected, key=str)}",
+    )
+
+
+# --- Round-2 explanation structure -------------------------------------------
+#
+# These checks describe the trace shape scripts/run_pipeline.py writes once
+# Round-2 explanations exist. Every check passes trivially on an older trace
+# that has no Round-2 explanations (frozen I8/I9 runs), so re-validating a
+# frozen run is unaffected.
+
+_ROUND2_INPUT_FIELDS = ("error_type", "error_message", "failing_module", "refined_subtype", "scope_status")
+
+
+def _round1_and_trigger(diagnostics: Dict[str, Any]):
+    rounds = diagnostics.get("rounds", [])
+    round1 = next((r for r in rounds if r.get("round") == 1), None)
+    round2 = next((r for r in rounds if r.get("round") == 2), None)
+    trigger = (round1 or {}).get("round2_trigger") or {}
+    return round1, round2, trigger
+
+
+def check_round2_explanations_well_formed(trace: List[Dict[str, Any]]) -> CheckResult:
+    """Every Round-2 explanation is tagged round == 2 and its input block
+    is the reclassified round2_record it explains (same error type,
+    message, failing module, subtype, scope) - never the original Round-1
+    error."""
+    offending = []
+    for diagnostics in trace:
+        _, _, trigger = _round1_and_trigger(diagnostics)
+        explanation = trigger.get("explanation")
+        if explanation is None:
+            continue
+        nid = diagnostics.get("notebook_execution_id")
+        if explanation.get("round") != 2:
+            offending.append((nid, f"round tag {explanation.get('round')!r}"))
+            continue
+        record = trigger.get("round2_record") or {}
+        input_block = explanation.get("input") or {}
+        for field in _ROUND2_INPUT_FIELDS:
+            if input_block.get(field) != record.get(field):
+                offending.append((nid, f"input.{field}={input_block.get(field)!r} != round2_record.{field}={record.get(field)!r}"))
+                break
+    return CheckResult("round2_explanations_well_formed", not offending, f"offending={offending}")
+
+
+def check_round2_entry_explanation_matches_trigger(trace: List[Dict[str, Any]]) -> CheckResult:
+    """When Round 2 executed, its entry's explanation is the SAME Round-2
+    explanation the trigger carries (equal content). The duplicate is a
+    representation of one record, not a second explanation."""
+    offending = []
+    for diagnostics in trace:
+        _, round2, trigger = _round1_and_trigger(diagnostics)
+        if round2 is None:
+            continue
+        entry_expl = round2.get("explanation")
+        trig_expl = trigger.get("explanation")
+        if entry_expl is None and trig_expl is None:
+            continue  # pre-Round-2-explanation trace
+        if entry_expl != trig_expl:
+            offending.append(diagnostics.get("notebook_execution_id"))
+    return CheckResult("round2_entry_explanation_matches_trigger", not offending, f"offending_notebook_execution_ids={offending}")
+
+
+def check_no_round3_explanation(trace: List[Dict[str, Any]]) -> CheckResult:
+    """No explanation anywhere carries a round tag above 2, and no Round-2
+    entry carries its own round2_trigger (which is where a third
+    reclassification/explanation would have to appear)."""
+    offending = []
+    for diagnostics in trace:
+        nid = diagnostics.get("notebook_execution_id")
+        rounds = diagnostics.get("rounds", [])
+        for entry in rounds:
+            expl = entry.get("explanation")
+            if expl is not None and (expl.get("round") or 0) > 2:
+                offending.append((nid, f"entry round tag {expl.get('round')}"))
+            if entry.get("round") == 2 and "round2_trigger" in entry:
+                offending.append((nid, "round2_trigger on a round-2 entry"))
+            trig_expl = (entry.get("round2_trigger") or {}).get("explanation")
+            if trig_expl is not None and (trig_expl.get("round") or 0) > 2:
+                offending.append((nid, f"trigger explanation round tag {trig_expl.get('round')}"))
+        if len([e for e in rounds if e.get("round") not in (1, 2)]) > 0:
+            offending.append((nid, "rounds entry outside 1..2"))
+    return CheckResult("no_round3_explanation", not offending, f"offending={offending}")
+
+
+def check_top_level_explanation_is_round1(trace: List[Dict[str, Any]]) -> CheckResult:
+    """The top-level explanation remains the ORIGINAL-failure explanation:
+    tagged round 1 when tagged at all, and equal to the Round-1 entry's
+    explanation when that entry carries one. Metric A reads the top level,
+    so this is what keeps it comparable with the frozen runs."""
+    offending = []
+    for diagnostics in trace:
+        nid = diagnostics.get("notebook_execution_id")
+        top = diagnostics.get("explanation")
+        if top is None:
+            continue
+        if "round" in top and top.get("round") != 1:
+            offending.append((nid, f"top-level round tag {top.get('round')!r}"))
+            continue
+        round1, _, _ = _round1_and_trigger(diagnostics)
+        r1_expl = (round1 or {}).get("explanation")
+        if r1_expl is not None and r1_expl != top:
+            offending.append((nid, "round-1 entry explanation differs from top-level"))
+    return CheckResult("top_level_explanation_is_round1", not offending, f"offending={offending}")
+
+
+def check_non_repairable_round2_explanations_are_trace_only(
+    trace: List[Dict[str, Any]], rows: List[Dict[str, Any]]
+) -> CheckResult:
+    """A reclassified new error that was NOT repair-eligible may carry a
+    Round-2 explanation on the trigger, but must have no executed Round-2
+    entry and no round == 2 repair_attempts row (the one-row-per-executed-
+    round contract is unchanged)."""
+    round2_row_ids = {r.get("notebook_execution_id") for r in rows if r.get("round") == 2}
+    offending = []
+    for diagnostics in trace:
+        _, round2, trigger = _round1_and_trigger(diagnostics)
+        if "round2_record" not in trigger or trigger.get("triggered"):
+            continue
+        nid = diagnostics.get("notebook_execution_id")
+        if round2 is not None:
+            offending.append((nid, "executed round-2 entry despite not triggered"))
+        if nid in round2_row_ids:
+            offending.append((nid, "round-2 repair_attempts row despite not triggered"))
+    return CheckResult("non_repairable_round2_explanations_are_trace_only", not offending, f"offending={offending}")
+
+
+def check_round2_explanation_failure_did_not_block_repair(trace: List[Dict[str, Any]]) -> CheckResult:
+    """A failed Round-2 explanation on a TRIGGERED record must not have
+    prevented Round 2 from executing: a Round-2 entry must still exist
+    (completed, or component_error from the repair round itself)."""
+    offending = []
+    for diagnostics in trace:
+        _, round2, trigger = _round1_and_trigger(diagnostics)
+        explanation = trigger.get("explanation")
+        if explanation is None or not trigger.get("triggered"):
+            continue
+        status = (explanation.get("explanation_result") or {}).get("status")
+        if status == "success":
+            continue
+        if round2 is None:
+            offending.append(diagnostics.get("notebook_execution_id"))
+    return CheckResult(
+        "round2_explanation_failure_did_not_block_repair", not offending, f"offending_notebook_execution_ids={offending}"
     )
 
 
@@ -245,6 +420,14 @@ def run_all_checks(
         check_no_dev_records_in_evaluation_split(manifest["split"], trace, i2_by_id),
         check_manifest_hash_consistency(manifest, root),
         check_result_logger_reconciliation(trace, rows),
+        # Round-2 explanation structure (all pass trivially on traces that
+        # predate Round-2 explanations, so frozen runs re-validate unchanged).
+        check_round2_explanations_well_formed(trace),
+        check_round2_entry_explanation_matches_trigger(trace),
+        check_no_round3_explanation(trace),
+        check_top_level_explanation_is_round1(trace),
+        check_non_repairable_round2_explanations_are_trace_only(trace, rows),
+        check_round2_explanation_failure_did_not_block_repair(trace),
     ]
 
 
