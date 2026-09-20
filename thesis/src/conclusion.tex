@@ -1,110 +1,144 @@
 \chapter{Conclusion}
 \label{chap:conclusion}
 
-This thesis set out to close a specific, narrow gap: the existing FAIR
-Jupyter reproducibility pipeline can detect that a notebook fails because of
-a missing or incompatible Python package, but it does not explain that
-failure or attempt to repair it. \Cref{chap:related-work} showed that the
-individual pieces needed to close this gap -- failure detection, automated
-dependency inference, and LLM-based program repair -- already existed
-separately in the literature, but not combined inside a reproducibility
-pipeline, grounded in live package data, and paired with a plain-language
+This thesis set out to close a narrow gap. The FAIR Jupyter reproducibility
+pipeline can detect that a notebook failed because of a missing or
+incompatible Python package, but it does not explain that failure and does
+not try to repair it. \Cref{chap:related-work} showed that the pieces
+needed to close this gap already existed separately: failure detection,
+automated dependency inference, and LLM-based program repair. Among the
+systems reviewed, none combined all three inside a reproducibility
+pipeline, grounded in live package data and paired with a plain-language
 explanation.
 
-\Cref{chap:problem-dataset} through \Cref{chap:validation} reported what has
-actually been built to close it. Of the 214 dependency-error notebooks in
-the Docker pipeline's own residual failures, 200 fall inside this thesis's
-pip-only repair scope. A deterministic classifier decides scope and subtype
-before any language model is involved.
+The repair layer built here does that. A deterministic classifier decides
+scope and subtype before any language model is involved. An explanation
+component turns a raw error message into a plain-language,
+schema-validated account of what went wrong. Its scope is deliberately
+wider than the repair scope: all 214 dependency-error records are eligible
+for an explanation, not only the 200 that fall inside the pip-only repair
+scope. A repair component proposes a fix using an open, locally deployable
+model, checked field by field against live PyPI metadata and a small
+curated compatibility registry, so a suggested package name or version is
+never a guess. A fix-application component applies that proposal inside a
+Docker environment rebuilt from the original recipe, re-runs the whole
+notebook, and classifies the result. When that re-execution exposes a new
+error, the layer classifies and explains it as well, and repairs it in one
+bounded second round if it is repairable; explanation and repair stay
+independent of each other throughout.
 
-An explanation component is designed
-to turn a raw error message into a plain-language, schema-validated
-description of what went wrong, for every one of the 214 rows, not only the
-repairable ones -- a scope confirmed in a real, committed example
-(\Cref{sec:m-explanation-example}). It has since been run across all 200
-repair-scope rows, producing a schema-valid explanation for 185 of the 187
-final evaluation rows; it has not been run on the 14 rows that remain in
-explanation scope but fall outside repair scope.
+A result-logging component records one row per repair-decision entry,
+including abstentions, in a SQLite benchmark table; in the final
+evaluation every one of those entries was a repair-agent invocation. Exported to CSV and
+run through the existing RML mapping, the final run's 235 rows became
+3{,}478 RDF triples, in which each repair attempt is linked to the
+notebook resource that the FAIR Jupyter knowledge graph uses for the
+repaired notebook, validated in union with the existing notebook graph.
+The
+implementation is covered by 711 automated tests and was checked against
+real PyPI, a real Ollama model, real Docker execution, real GitHub
+repositories, and the real Morph-KGC mapping engine. The quantitative
+evaluation used the 187 records reserved as the evaluation split; the 13
+development records were used only for prompt design and pilots.
 
-A repair component proposes a fix using an open, locally-run model whose
-suggestion is checked, field by field, against live PyPI metadata and a
-small, hand-curated compatibility registry, so that a suggested package name
-or version is never a guess. A fix-application component applies that
-proposal inside a rebuilt environment equivalent to the one the notebook
-originally failed in, re-runs the whole notebook, and classifies the result
-into exactly three outcomes. A result-logging component then joins the
-classification, explanation, and repair records these four components
-already produced into one persistent record per repair attempt, and a
-knowledge-graph mapping re-expresses that record as RDF and links it to the
-notebook it repairs inside the existing FAIR Jupyter knowledge graph. All of
-this is implemented, covered by 332 automated tests.
+The three research questions of \Cref{sec:intro-rqs} are answered below,
+each from the final frozen implementation run over that split.
 
-It was additionally
-checked against real PyPI, a real Ollama model, a real Docker daemon, real
-GitHub repositories, and, for the logging and knowledge-graph components,
-the real Morph-KGC mapping engine and the knowledge graph's own source data
--- first in a small pilot, and then, for the repair layer as a whole, in a
-final evaluation over the complete 187-row evaluation split
-(\Cref{chap:validation}).
+\section*{RQ1: Explaining residual failures}
 
-Both the small pilot and the final evaluation produced the same finding,
-worth restating here because it shapes how the rest of this project should
-be read: a repair attempt that resolves its targeted dependency error often
-uncovers a second, previously invisible one. This is not a weakness of the
-components built for this thesis -- their own classification logic is
-separately proven capable of reporting a completely clean result -- but a
-real characteristic of research notebooks that depend on more than one
-package. Across the final evaluation, 84.9\% of real repair attempts
-resolved the error they targeted, and yet no notebook in the 187-row split
-reached complete recovery within the two-round repair budget: the
-recurring cause was not a bad repair, but a second dependency error the
-first repair had simply not reached yet, together with a package-mapping
-coverage gap (\texttt{mapping\_unknown}) that kept the repair agent from
-even reaching the language model for the majority of its 235 invocations
-across both rounds.
+Gemma-2 9B completed 160 of the 187 original-failure explanations and all
+50 explanations of errors newly exposed by a first repair; every one of
+the 210 completed responses satisfied the explanation schema. The 27
+missing records were timeouts and one service error of the local,
+CPU-only model deployment, not malformed output. Fifteen participants,
+with self-reported Python and Jupyter experience ranging from none to
+regular use, each rated six of twelve frozen original-failure
+explanations against a six-item questionnaire adapted from Hoffman et
+al.~\cite{hoffman2023measures}. Of the 540 ratings, 88.9\% were Agree or
+Strongly Agree, and every item reached a majority-agree median.
+Understanding scored highest; satisfaction scored lowest, matching
+free-text feedback that asked for more about the likely cause and less
+restatement of the error message. The answer to RQ1 is therefore
+positive within its scope: an open model produced structured explanations
+for every failure it was able to answer, and the readers in this study
+found them understandable, useful, and plausible. The ratings say nothing
+about objective correctness, about a comparison with an alternative
+method, or about the Round-2 and Qwen explanations, which no participant
+rated.
 
-It is also a direct argument for the
-two-round repair mode, which has since been built, small-pilot-validated,
-and exercised at full evaluation scale (\Cref{chap:future-work,chap:validation}):
-a single repair attempt is often only the first of several a real notebook
-may need. In the final evaluation, Round 2 fired for 48 notebooks but fixed
-none of them beyond what Round 1 already had, chiefly because 36 of those
-48 abstained again on the same package-mapping gap. Whether a larger repair
-budget, or better mapping coverage, would change this outcome is still an
-open, unmeasured question.
+\section*{RQ2: Resolving the targeted error and recovering the notebook}
 
-Several design decisions changed along the way, and \Cref{chap:methodology}
-recorded each one rather than hiding it behind a description that only
-matches the final result. The clearest examples are that the original
-containers this system was assumed to reuse for fix validation turned out
-never to have been preserved, so the environment is rebuilt from the same
-recipe instead; that the repair proposal's own persisted record does not
-carry a notebook's identity forward, so a re-join step had to be added; and
-that the explanation component's output format changed from free prose to
-strict, schema-validated JSON once it had to fit inside an automated
-pipeline. A further open question from the original design -- whether the
-Docker pipeline's own notebook and repository identifiers actually coincide
-with the ones the existing FAIR Jupyter knowledge graph was built from --
-was resolved only once it was checked directly against that graph's own
-source data, rather than assumed, confirming that the two agree on all 214
-records inspected and that no separate crosswalk table is needed to link a
-repair attempt to its notebook. None of these changes weaken the system --
-each was made because a concrete implementation problem or a genuine open
-question required it, and each is now covered by a regression test or a
-recorded check.
+The two halves of RQ2 have different answers, and they must be read
+together. Every one of the 73 repair proposals the language model produced
+was schema-valid and grounded in retrieved PyPI evidence, and 62 of the 73
+FixApplicator attempts (84.9\%) removed the specific dependency error they
+targeted. No notebook, however, re-executed cleanly
+from start to finish within the two-round budget: full recovery is 0 of
+187. The first figure is per attempt, the second per notebook, and they
+are reported side by side throughout rather than combined into one
+success rate.
 
-An orchestrator connects the existing
-components -- result logging and knowledge-graph enrichment, and the
-bounded two-round repair mode, included -- without a person
-driving each attempt by hand, and has run unattended over the complete
-187-row evaluation split. Abstaining rather than guessing an unsupported
-package name, and correctly reporting \texttt{still\_failing} on a genuinely
-new error rather than claiming a repair that did not happen, are the
-conservative behaviours this thesis deliberately built into the system, and
-the final evaluation shows both working as intended, at a scale a small
-pilot could not have shown. What remains, as \Cref{chap:future-work}
-states, is enriching the knowledge graph at the same full-evaluation scale,
-and the explanation-quality and baseline comparisons that were always
-planned as follow-on work. None of this requires redesigning any of the
-components described in this thesis; it extends work that is already
-built, tested, and now evaluated.
+Two factors explain the distance between them. The first is a deliberate
+system behaviour: the repair agent's static import-to-distribution mapping
+could not resolve the failing import in 162 of its 235 invocations, and it
+abstained rather than guess a package name it could not ground. The second
+is a property of the evaluated notebooks: many of them exposed further
+dependency errors in sequence, so repairing one import frequently exposed
+a second that had been invisible behind it; \Cref{sec:v-case-study} traces
+a notebook that exposed a third dependency error after two successful
+targeted repairs. The two-round cap then determines how far along such a
+chain the system can follow. The answer to RQ2 is that the bounded
+pipeline resolves the
+targeted error in most of the attempts it makes, that it makes an attempt
+for fewer than a third of its invocations, and that resolving one
+dependency error did not restore complete execution within the two-round
+budget in this evaluation.
+
+\section*{RQ3: Sensitivity to the choice of model}
+
+The same 187-notebook evaluation was repeated with Gemma-2 9B replaced by
+Qwen3.6-35B-A3B-MLX-8bit. The pipeline, prompts, schemas, retrieval,
+validation, evaluation records, and repair policy were held fixed; the
+model, its provider, and the calibrated Qwen output-token budget differed.
+Every aggregate repair figure was identical: the same 126 Round-1
+abstentions, the same 73 grounded proposals, the same 62 targeted errors
+resolved, and zero full recoveries for both. The two runs were not
+identical in every decision. On 13 notebooks, all failing on the same
+removed NumPy symbol, both models pinned NumPy from the same grounded
+candidate list, Gemma to 1.26.3 and Qwen to 1.26.4. Both versions
+satisfied the retrieved compatibility constraint, both installed, and the
+notebooks then failed on the same next error under both models. Model
+choice produced a small difference in version selection for these 13
+repairs, but it did not change any measured downstream repair outcome.
+Qwen also completed all 237 explanation records under its serving
+environment, whereas the local Gemma/Ollama run lost 27 to runtime
+timeouts. Because the model and the serving setup changed together, this
+observation does not isolate the model as the cause. The answer
+to RQ3 is that, under this pipeline, structured repair decisions were
+nearly insensitive to the choice between these two models and the measured
+repair outcomes were unaffected, while explanation completion differed
+between the two runs. The retrieval and grounding layer bounds a valid
+proposal to the resolved distribution and a small, PyPI-confirmed
+candidate set, so what remains for a model to decide is a choice among a
+few compatible versions. Neither model is shown to be generally better
+than the other, and other models could behave differently.
+
+\section*{Closing remark}
+
+Taken together, the answer to the question this thesis opened with is a
+qualified yes. A dependency-related notebook failure can be explained in
+language a non-specialist reader finds understandable. The results show
+that specific dependency errors can often be repaired automatically with
+grounded, deterministically validated proposals from an open model, even
+though complete notebook recovery remained out of reach within the
+two-round budget. What this system cannot yet do is carry a real research
+notebook all the way back to a clean run, because many notebooks in the
+evaluation exposed additional dependency errors after an initial repair
+and because resolving an import name to a package remains the binding
+constraint. Two limits of the
+evaluation itself also stand: the repositories were re-executed at their
+default-branch state rather than at the originally failing commit, and the
+local model service did not answer every explanation request in time.
+\Cref{chap:future-work} sets out what would have to change for that, and
+\Cref{sec:v-threats} states the boundaries within which every result above
+should be read.

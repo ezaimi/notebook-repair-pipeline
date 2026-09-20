@@ -1,21 +1,26 @@
 \chapter{Problem Analysis and Dataset}
 \label{chap:problem-dataset}
 
-This chapter answers two questions that must be kept separate: how large is
-the reproducibility problem in general, and what, concretely, does this
-thesis's own implementation operate on. The first question is answered by
-numbers from the original, full-scale FAIR Jupyter study. The second is
-answered by a much smaller, precisely defined dataset derived from the newer
-Docker-based pipeline. The two are related -- the second is a residual
-subset of the first kind of failure -- but they are not the same numbers, and
-this chapter does not mix them.
+This chapter answers two questions and keeps them apart. How large is the
+reproducibility problem in general, and what exactly does this thesis's
+implementation operate on? The first is answered by numbers from the
+original, full-scale FAIR Jupyter study. The second is answered by a much
+smaller, precisely defined dataset drawn from the newer Docker-based
+pipeline. The two are related, because the second is a residual subset of
+the same kind of failure, but they are not the same numbers and are never
+mixed here.
 
 \section{Scale of the Problem}
 \label{sec:pd-l1}
 
 The original FAIR Jupyter study executed every notebook it collected using a
-fresh conda environment per repository~\cite{samuel2024gigascience}. Across
-that full run:
+fresh conda environment per repository~\cite{samuel2024gigascience}. The
+figures below were recomputed for this thesis from the published database
+of that study~\cite{samuel2024zenodo}, using the local snapshot of its
+\texttt{executions} table. A notebook counts as executed when its
+execution record is neither an environment-installation failure nor a
+skipped notebook, and the two exception counts are taken from the recorded
+failure reason of each execution:
 
 \begin{itemize}
   \item Total notebooks executed: \textbf{10,389}
@@ -24,13 +29,18 @@ that full run:
   \item Combined dependency-related failures: \textbf{6,576 (63.3\%)}
 \end{itemize}
 
-In other words, roughly two out of every three executed notebooks failed for
-a dependency-related reason. The missing modules were dominated by
+The published article itself reports 10,388 notebooks attempted for
+re-execution and 6,588 \texttt{ModuleNotFoundError} and
+\texttt{ImportError} exceptions, computed over a different
+denominator~\cite{samuel2024gigascience}; the small differences reflect
+the counting rule stated above, not a different dataset. In other words,
+roughly two out of every three executed notebooks failed for a
+dependency-related reason. The missing modules were dominated by
 biomedical and machine-learning packages, consistent with the PubMed Central
 origin of the dataset: \texttt{anndata} (1258 occurrences),
 \texttt{scanpy} (423), \texttt{pandas} (177), \texttt{cemba\_data} (176),
 \texttt{tensorflow} (149), \texttt{Bio} (108), and \texttt{fastai} (103) were
-the most frequently missing modules.
+the most frequently missing modules in that snapshot.
 
 These numbers exist to establish that dependency failure is a large-scale,
 systematic problem, not an edge case worth ignoring. \textbf{They are not the
@@ -44,18 +54,19 @@ next.
 \subsection{Why the Docker Pipeline, Not the Conda Run}
 \label{sec:pd-why-docker}
 
-The newer, containerised pipeline~\cite{samuel2025docker} re-executes each
-repository inside its own Docker container. Containerisation resolves many
-of the failures counted in \Cref{sec:pd-l1} that were really caused by a
-missing system tool or an operating-system mismatch rather than by the
-notebook's Python dependencies. What is left over after containerisation --
-notebooks that still fail even inside a container built specifically for
-them -- is a cleaner, more targeted signal of a genuine dependency problem.
-This is why the Docker pipeline, not the original conda run, was chosen as
-the integration target: its residual failures are exactly the gap this
-thesis is meant to close, and its result schema already tags each failure
-with a pre-computed \texttt{error\_category}, which removes the need to
-re-implement failure detection from scratch.
+The newer, containerised pipeline~\cite{samuel2025docker} re-executes
+each repository inside its own Docker container. Containerisation
+resolves many of the failures counted in \Cref{sec:pd-l1} that were
+really caused by a missing system tool or an operating-system mismatch,
+not by the notebook's Python dependencies. What is left over after
+containerisation -- notebooks that still fail even inside a container
+built specifically for them -- is a cleaner, more targeted signal of a
+genuine dependency problem. This is why the Docker pipeline, not the
+original conda run, was chosen as the integration target. Its residual
+failures are exactly the gap this thesis is meant to close. And its
+result schema already tags each failure with a pre-computed
+\texttt{error\_category}, which removes the need to re-implement
+failure detection from scratch.
 
 \subsection{Source and Filtering}
 \label{sec:pd-source}
@@ -90,9 +101,10 @@ A repair action that also has to reason about system-level packages
 path inside the notebook's own code introduces a second, much larger kind of
 decision that this thesis does not attempt to automate yet.
 
-Applying this scope split the 214 rows into two groups.
+Applying this scope splits the 214 rows into the four subtypes of
+\Cref{tab:pd-subtypes}, and those in turn into two groups.
 
-\begin{table}[h]
+\begin{table}[htbp]
   \centering
   \begin{tabular}{|l|r|p{6.3cm}|}
     \hline
@@ -113,16 +125,16 @@ Applying this scope split the 214 rows into two groups.
 
 The 10 \texttt{system\_library} rows are excluded because they need
 \texttt{apt}-level installation, which is outside the pip-only scope by
-definition; a missing shared library cannot be fixed by any pip command,
-however it is phrased. The 4 \texttt{mapping\_unknown} rows are excluded
-because their failing name (for example a generic module called
-\texttt{utils}) cannot be safely resolved to one specific PyPI package
-without guessing -- and guessing a package name is exactly the kind of
-unfounded suggestion this thesis's PyPI-grounding design
-(\Cref{chap:architecture}) is built to avoid. This leaves \textbf{200 usable}
-rows and \textbf{14 excluded} rows.
+definition. A missing shared library cannot be fixed by any pip
+command, however it is phrased. The 4 \texttt{mapping\_unknown} rows are
+excluded because their failing name (for example a generic module
+called \texttt{utils}) cannot be safely resolved to one specific PyPI
+package without guessing. Guessing a package name is exactly the kind
+of unfounded suggestion this thesis's PyPI-grounding design
+(\Cref{chap:architecture}) is built to avoid. This leaves \textbf{200
+usable} rows and \textbf{14 excluded} rows.
 
-\begin{table}[h]
+\begin{table}[htbp]
   \centering
   \begin{tabular}{|l|r|p{7.5cm}|}
     \hline
@@ -139,50 +151,137 @@ rows and \textbf{14 excluded} rows.
   \label{tab:pd-splits}
 \end{table}
 
-The 13-row \texttt{dev} split was used exclusively during implementation, to
-design and manually sanity-check the explanation and repair prompts and to
-run the small real-system pilots reported in \Cref{chap:validation}. The
-187-row \texttt{evaluation} split was kept untouched until the implementation
-described in \Cref{chap:methodology} was complete, and was then run once,
-without further changes to any component, to produce the final results
-reported in \Cref{chap:validation}.
+\Cref{tab:pd-splits} shows how the 214 rows divide across the three
+resulting splits. The 13-row \texttt{dev} split was used exclusively during
+implementation, to design and manually sanity-check the explanation and
+repair prompts and to run the small real-system pilots reported in
+\Cref{chap:validation}. The
+187-row \texttt{evaluation} split was reserved from prompt and
+repair-strategy tuning: no prompt, mapping entry, or repair rule was
+designed against it. The results reported in \Cref{chap:validation} were
+generated using the final frozen implementation described in
+\Cref{chap:methodology}.
 
 \subsection{Explanation Scope Is Wider Than Repair Scope}
 \label{sec:pd-explanation-scope}
 
-One further decision, made explicit only while building RAGRepairAgent,
-deserves stating clearly here because it affects every later chapter. The
-pip-only restriction above governs \emph{repair} eligibility only. It does
-not restrict \emph{explanation}. All 214 rows, including the 14 excluded
-ones, remain within the explanation scope defined for objective O1; only
-the 200 usable rows are additionally within scope for the repair-proposal
-and fix-application components (objectives O2 and O3). A researcher whose notebook fails because of a missing system
-library still deserves to be told what went wrong, even though this
-thesis's current repair layer cannot fix that particular case automatically.
+One further decision affects every later chapter and is worth stating
+clearly. The pip-only restriction above governs \emph{repair} eligibility
+only. It does not restrict \emph{explanation}. All 214 rows, including the
+14 excluded ones, stay within the explanation scope defined for objective
+O1. Only the 200 usable rows are additionally in scope for the
+repair-proposal and fix-application components (objectives O2 and O3). A
+researcher whose notebook fails because of a missing system library still
+deserves to be told what went wrong, even though the current repair layer
+cannot fix that case automatically.
+
+\Cref{fig:pd-scope} shows this scope boundary in one place. Every one of
+the 214 records enters classification and stays within the explanation
+objective, while only 200 are repair-eligible and feed the rest of the
+repair layer.
+
+\begin{figure}[h]
+  \centering
+  \resizebox{0.92\textwidth}{!}{%
+  \begin{tikzpicture}[
+      font=\small,
+      comp/.style={draw, rounded corners, fill=blue!6, minimum width=3.1cm,
+                   minimum height=1.05cm, align=center, node distance=8mm},
+      elig/.style={draw, rounded corners, fill=green!8, minimum width=2.9cm,
+                   minimum height=1.2cm, align=center, node distance=6mm},
+      excl/.style={draw, rounded corners, fill=red!6, minimum width=2.9cm,
+                   minimum height=1.2cm, align=center, node distance=6mm},
+      leaf/.style={draw, rounded corners, fill=gray!10, minimum width=2.9cm,
+                   minimum height=0.9cm, align=center, node distance=6mm},
+      arr/.style={-{Latex[length=2.2mm]}, thick},
+    ]
+    % ---------- row of four subtypes ----------
+    \node[elig] (c1) {\texttt{missing\_package}\\179\\\footnotesize repair-eligible};
+    \node[elig, right=of c1] (c2) {\texttt{wrong\_version}\\21\\\footnotesize repair-eligible};
+    \node[excl, right=26mm of c2] (c3) {\texttt{system\_library}\\10\\\footnotesize excluded from repair};
+    \node[excl, right=of c3] (c4) {\texttt{mapping\_unknown}\\4\\\footnotesize excluded from repair};
+
+    \coordinate (topmid) at ($(c1)!0.5!(c4)$);
+    \node[comp, above=30mm of topmid] (records)
+      {214 \texttt{DEPENDENCY\_ERROR} records\\(172 \texttt{ModuleNotFoundError} + 42 \texttt{ImportError})};
+    \node[font=\small, below=8mm of records, text width=6cm, align=center] (classify)
+      {Error classification / repair eligibility};
+
+    \coordinate (busY) at ($(c1.north)+(0,7mm)$);
+    \draw[arr] (records) -- (classify);
+    \draw (classify.south) -- (classify.south |- busY);
+    \draw (c1.north -| busY) -- (c4.north -| busY);
+    \draw[arr] (c1.north -| busY) -- (c1.north);
+    \draw[arr] (c2.north -| busY) -- (c2.north);
+    \draw[arr] (c3.north -| busY) -- (c3.north);
+    \draw[arr] (c4.north -| busY) -- (c4.north);
+
+    % ---------- aggregate row ----------
+    \coordinate (usablemid) at ($(c1)!0.5!(c2)$);
+    \coordinate (exclmid) at ($(c3)!0.5!(c4)$);
+    \node[comp, below=16mm of usablemid] (usable) {200 repair-usable};
+    \node[comp, below=16mm of exclmid] (excluded) {14 excluded from repair};
+
+    \draw[arr] (c1.south) -- (usable.north);
+    \draw[arr] (c2.south) -- (usable.north);
+    \draw[arr] (c3.south) -- (excluded.north);
+    \draw[arr] (c4.south) -- (excluded.north);
+
+    % ---------- leaves ----------
+    \node[leaf, below left=12mm and 2mm of usable] (dev) {13 development};
+    \node[leaf, below right=12mm and 2mm of usable] (evalset) {187 frozen evaluation};
+    \draw[arr] (usable) -- (dev);
+    \draw[arr] (usable) -- (evalset);
+
+    \node[leaf, below left=12mm and 2mm of excluded] (sys) {10 \texttt{system\_library}};
+    \node[leaf, below right=12mm and 2mm of excluded] (map) {4 \texttt{mapping\_unknown}};
+    \draw[arr] (excluded) -- (sys);
+    \draw[arr] (excluded) -- (map);
+  \end{tikzpicture}%
+  }
+  \caption{Scope boundary over the 214-row working dataset. Every record
+  enters classification and stays within the explanation objective O1, but
+  only \texttt{missing\_package} and \texttt{wrong\_version} records are
+  repair-eligible. Those 200 records split into the development and frozen
+  evaluation sets.}
+  \label{fig:pd-scope}
+\end{figure}
 
 \subsection{The Most Common Failing Modules}
 \label{sec:pd-top-modules}
 
-\begin{table}[h]
+\begin{table}[htbp]
   \centering
   \begin{tabular}{|l|r||l|r|}
     \hline
     \textbf{Module} & \textbf{Occurrences} & \textbf{Module} & \textbf{Occurrences} \\
     \hline
-    \texttt{pkg\_resources} & 22 & \texttt{keras} & 7 \\
+    \texttt{pkg\_resources} & 22 & \texttt{google} & 5 \\
     \hline
-    \texttt{sklearn} & 16 & \texttt{scipy} & 7 \\
+    \texttt{sklearn} & 16 & \texttt{gnomad} & 5 \\
     \hline
-    \texttt{rpy2} & 15 & \texttt{skimage} & 6 \\
+    \texttt{rpy2} & 15 & \texttt{omero} & 5 \\
     \hline
     \texttt{numpy} & 14 & \texttt{dms\_variants} & 4 \\
     \hline
-    \texttt{cana} & 12 & \texttt{statsmodels} & 4 \\
+    \texttt{cana} & 12 & \texttt{bindingcalculator} & 4 \\
     \hline
-    \texttt{celloracle} & 12 & \texttt{libxcb.so.1} & 3 \\
+    \texttt{celloracle} & 12 & \texttt{libXrender.so.1} & 4 \\
+    \hline
+    \texttt{keras} & 7 & \texttt{statsmodels} & 4 \\
+    \hline
+    \texttt{scipy} & 7 & \texttt{openslide-bin} & 4 \\
+    \hline
+    \texttt{skimage} & 6 & \texttt{libxcb.so.1} & 3 \\
+    \hline
+    \texttt{physicool} & 5 & \texttt{bokeh} & 3 \\
     \hline
   \end{tabular}
-  \caption{Most frequent failing modules in the working dataset (top 12 of 20 recorded).}
+  \caption{The 20 most frequent failing modules in the 214-row working
+  dataset, in descending order down the left column and continuing down the
+  right. Two entries (\texttt{libXrender.so.1}, \texttt{libxcb.so.1}) are
+  shared system libraries rather than Python modules, and fall outside the
+  pip-only repair scope.}
   \label{tab:pd-top-modules}
 \end{table}
 
@@ -199,7 +298,8 @@ cases in this dataset.
 
 The reproducibility problem is large at the scale of the full conda-based
 FAIR Jupyter run (\Cref{sec:pd-l1}: 6,576 dependency-related failures out of
-10,389 executed notebooks). This thesis does not attempt to repair that
+10,389 executed notebooks in the local snapshot of the published
+dataset). This thesis does not attempt to repair that
 entire set. It operates on a precisely defined, much smaller residual
 subset: the 214 dependency-error rows still present after the newer Docker
 pipeline's containerisation, of which 200 fall inside the pip-only v1 repair
