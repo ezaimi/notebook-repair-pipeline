@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Tuple
 
 import yaml
 
+import llm_providers
 from explanation_validator import parse_and_validate
 from render_explanation_prompt import iter_rendered_prompts
 
@@ -75,6 +76,33 @@ def call_ollama(
     return response_data.get("response", ""), response_data
 
 
+# provider dispatch: routes to call_ollama() (default, unchanged) or the
+# shared Kiste transport (scripts/llm_providers.py) for the model-
+# sensitivity supplementary experiment. config["provider"] is absent from
+# every existing config file, so `config.get("provider", "ollama")` always
+# resolves to "ollama" for them - the call below is then byte-identical to
+# calling call_ollama() directly, and still resolves the module-level name
+# `call_ollama` at call time, so tests that monkeypatch
+# run_llm_explainer.call_ollama continue to intercept it unchanged.
+def call_llm(
+    model: str,
+    prompt: str,
+    generation_config: Dict[str, Any],
+    config: Dict[str, Any],
+) -> Tuple[str, Dict[str, Any]]:
+    provider = config.get("provider", "ollama")
+    if provider == "ollama":
+        return call_ollama(model=model, prompt=prompt, generation_config=generation_config)
+    if provider == "kiste":
+        return llm_providers.call_kiste(
+            model=model,
+            prompt=prompt,
+            generation_config=generation_config,
+            kiste_config=config.get("kiste", {}),
+        )
+    raise ValueError(f"unknown provider: {provider!r}")
+
+
 def build_retry_prompt(original_prompt: str, invalid_response: str, errors: List[str]) -> str:
     return """The previous response was invalid.
 
@@ -128,10 +156,11 @@ def explain_one(
     for attempt in range(max_retries + 1):
         actual_attempts = attempt + 1
         try:
-            raw_response, ollama_metadata = call_ollama(
+            raw_response, ollama_metadata = call_llm(
                 model=model,
                 prompt=current_prompt,
                 generation_config=generation_config,
+                config=config,
             )
 
             valid, explanation, errors = parse_and_validate(raw_response, schema_path)

@@ -1,0 +1,13 @@
+metric,value
+n_rows_manual_validation_sample,49
+scope_accuracy_on_49_record_manual_validation_sample,0.9591836734693877
+scope_precision_on_49_record_manual_validation_sample,0.9428571428571428
+scope_recall_on_49_record_manual_validation_sample,1.0
+scope_f1_on_49_record_manual_validation_sample,0.9705882352941176
+scope_tp,33
+scope_fp,2
+scope_fn,0
+scope_tn,14
+subtype_accuracy_on_49_record_manual_validation_sample,0.9183673469387755
+failing_module_exact_match_accuracy_on_49_record_manual_validation_sample,1.0
+population_wide_accuracy_estimate,not reported - sample deliberately oversamples rare subtypes; no independently-known population weights or valid design-based estimator available (see docs/i8-evaluation-methodology.md and PREVALENCE_WEIGHTED_ACCURACY_CAVEAT in scripts/manual_ground_truth_scoring.py). The raw prevalence-weighted computation using pipeline-derived subtype counts (0.982) is retained ONLY in classifier_scoring.json for audit purposes and must not be cited as a population estimate.

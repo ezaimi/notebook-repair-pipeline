@@ -19,3 +19,24 @@ thesis/TU_Chemnitz_positiv_gruen.pdf
 .claude/*:Zone.Identifier
 __pycache__/
 *.pyc
+
+# Secrets (GITLAB_TOKEN, KISTE_API_TOKEN, ...). Never committed; see
+# scripts/evaluation_manifest.py's own "never reads .env" contract and
+# scripts/llm_providers.py, which reads KISTE_API_TOKEN only from the
+# process environment, never from this file.
+.env
+.env.*
+
+# I8 evaluation runs: keep manifest/summary/tables/validation_report (the
+# scientifically useful, reproducible-analysis artifacts); the raw/
+# subfolder (pipeline trace JSONL + repair_attempts.sqlite) is runtime
+# scratch, fully reconstructable by re-running scripts/run_evaluation.py
+# against the same manifest, and is deliberately not versioned. This is a
+# narrow rule scoped to raw/ only - future evaluation summaries/tables are
+# not ignored.
+data/evaluation/*/raw/
+
+# I8 machine-specific FixApplicator override config (absolute local DB
+# path) - see config/fix_applicator.evaluation.example.yaml for the
+# committed, path-free template.
+config/fix_applicator.evaluation.local.yaml

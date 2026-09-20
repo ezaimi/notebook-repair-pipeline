@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import llm_providers
 from pypi_retriever import load_rag_repair_config, retrieve
 from render_repair_prompt import render_repair_prompt
 from repair_proposal_validator import parse_and_validate_schema, validate_grounding
@@ -122,6 +123,39 @@ def call_ollama(
         response_data = json.loads(response.read().decode("utf-8"))
 
     return response_data.get("response", ""), response_data
+
+
+# provider dispatch: routes to call_ollama() (default, unchanged) or the
+# shared Kiste transport (scripts/llm_providers.py) for the model-
+# sensitivity supplementary experiment. repair_agent_config["provider"] is
+# absent from config/rag_repair.yaml, so `.get("provider", "ollama")`
+# always resolves to "ollama" there - the branch below is then
+# byte-identical to the direct call_ollama() call it replaces, and still
+# resolves the module-level name `call_ollama` at call time, so tests that
+# monkeypatch rag_repair_agent.call_ollama continue to intercept it
+# unchanged.
+def call_llm(
+    model: str,
+    prompt: str,
+    generation_config: Dict[str, Any],
+    repair_agent_config: Dict[str, Any],
+) -> Tuple[str, Dict[str, Any]]:
+    provider = repair_agent_config.get("provider", "ollama")
+    if provider == "ollama":
+        return call_ollama(
+            model=model,
+            prompt=prompt,
+            generation_config=generation_config,
+            ollama_url=repair_agent_config.get("ollama", {}).get("url"),
+        )
+    if provider == "kiste":
+        return llm_providers.call_kiste(
+            model=model,
+            prompt=prompt,
+            generation_config=generation_config,
+            kiste_config=repair_agent_config.get("kiste", {}),
+        )
+    raise ValueError(f"unknown provider: {provider!r}")
 
 
 # Bounds how much of the model's own previous (invalid) response is echoed
@@ -336,7 +370,15 @@ def run_repair_agent(
 
     # --- from here on, grounded evidence exists: an LLM call is justified ---
     repair_agent_config = config.get("repair_agent", {})
+    provider = repair_agent_config.get("provider", "ollama")
+    # provider_config carries whichever provider-specific settings apply
+    # (model/temperature/top_p/max_tokens/timeout_seconds, plus url for
+    # ollama or base_url for kiste) - selected once here so the rest of
+    # this function (and call_llm()) stays provider-agnostic. For the
+    # default "ollama" provider this is exactly `ollama_config` as before.
     ollama_config = repair_agent_config.get("ollama", {})
+    kiste_config = repair_agent_config.get("kiste", {})
+    provider_config = ollama_config if provider == "ollama" else kiste_config
     prompt_config = repair_agent_config.get("prompt", {})
     retry_config = repair_agent_config.get("retry", {})
     schema_path = repair_agent_config.get("output", {}).get(
@@ -348,7 +390,7 @@ def run_repair_agent(
     prompt = render_repair_prompt(record, retrieval_result, subtype, template)
 
     result["llm"] = {
-        "model": ollama_config.get("model"),
+        "model": provider_config.get("model"),
         "prompt_template": prompt_config.get("template"),
         "prompt_version": prompt_config.get("version"),
     }
@@ -368,11 +410,11 @@ def run_repair_agent(
     for attempt in range(max_retries + 1):
         actual_attempts = attempt + 1
         try:
-            raw_response, _ = call_ollama(
-                model=ollama_config.get("model"),
+            raw_response, _ = call_llm(
+                model=provider_config.get("model"),
                 prompt=current_prompt,
-                generation_config=ollama_config,
-                ollama_url=ollama_config.get("url"),
+                generation_config=provider_config,
+                repair_agent_config=repair_agent_config,
             )
 
             schema_valid, proposal, errors = parse_and_validate_schema(raw_response, schema_path)

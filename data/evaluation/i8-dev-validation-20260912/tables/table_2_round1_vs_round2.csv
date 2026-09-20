@@ -1,0 +1,7 @@
+metric,value
+round1_repair_success_rate,0.0
+final_repair_success_rate_up_to_round2,0.07692307692307693
+round2_eligible,4
+round2_attempted,1
+additional_notebooks_fixed_by_round2,1
+absolute_pp_improvement_from_round2,0.07692307692307693

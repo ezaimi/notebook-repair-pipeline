@@ -1,0 +1,89 @@
+{
+  "failing_module": {
+    "exact_match_accuracy": 1.0,
+    "n_scored": 49,
+    "n_skipped_unfilled": 0
+  },
+  "n_rows": 49,
+  "population_weights_used": {
+    "mapping_unknown": 0.018691588785046728,
+    "missing_package": 0.8364485981308412,
+    "system_library": 0.04672897196261682,
+    "wrong_version": 0.09813084112149532
+  },
+  "scope_status": {
+    "confusion": {
+      "fn": 0,
+      "fp": 2,
+      "tn": 14,
+      "tp": 33
+    },
+    "metrics": {
+      "accuracy": 0.9591836734693877,
+      "f1": 0.9705882352941176,
+      "precision": 0.9428571428571428,
+      "recall": 1.0
+    },
+    "n_scored": 49,
+    "n_skipped_unfilled": 0
+  },
+  "subtype": {
+    "confusion_matrix": {
+      "mapping_unknown": {
+        "mapping_unknown": 4,
+        "missing_package": 2
+      },
+      "missing_package": {
+        "missing_package": 16
+      },
+      "system_library": {
+        "system_library": 10
+      },
+      "wrong_version": {
+        "missing_package": 2,
+        "wrong_version": 15
+      }
+    },
+    "n_scored": 49,
+    "n_skipped_unfilled": 0,
+    "naive_overall_accuracy": 0.9183673469387755,
+    "naive_overall_accuracy_is_population_representative": false,
+    "naive_overall_accuracy_label": "Manual validation sample accuracy (n=49)",
+    "per_class": {
+      "mapping_unknown": {
+        "f1": 0.8,
+        "fn": 2,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.6666666666666666,
+        "tp": 4
+      },
+      "missing_package": {
+        "f1": 0.888888888888889,
+        "fn": 0,
+        "fp": 4,
+        "precision": 0.8,
+        "recall": 1.0,
+        "tp": 16
+      },
+      "system_library": {
+        "f1": 1.0,
+        "fn": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "tp": 10
+      },
+      "wrong_version": {
+        "f1": 0.9375,
+        "fn": 2,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.8823529411764706,
+        "tp": 15
+      }
+    },
+    "prevalence_weighted_overall_accuracy": 0.9822246655671615,
+    "prevalence_weighted_overall_accuracy_caveat": "This re-weighting is only a valid population-level estimate if `population_weights` comes from a source INDEPENDENT of the classifier being evaluated. Subtype counts derived from the same pipeline's own classification of the full 214-record dataset (e.g. missing_package=179, wrong_version=21, system_library=10, mapping_unknown=4) are NOT independent ground truth - using them as weights implicitly assumes the pipeline's population-wide classification is already correct, which is exactly what this metric is trying to measure. Do not present the resulting number as population-wide classifier accuracy in a thesis or report unless the population weights are independently known (e.g. from a full manual audit of all 214 records) or a properly justified design-based estimator is used instead. See docs/i8-evaluation-methodology.md."
+  }
+}

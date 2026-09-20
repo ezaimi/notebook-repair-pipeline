@@ -26,11 +26,15 @@ of installed Python packages. When it is later run in a different
 environment, a package may be missing entirely, or a newer version of a
 package may no longer provide the exact function the notebook expects. Both
 situations produce an error before the notebook can finish, even though the
-scientific code itself may be correct. The resulting error messages are often
-short and technical, for example \texttt{ModuleNotFoundError: No module named
-'sklearn'}, which is unhelpful to a researcher who is not a software
-developer and has no way to know that the fix is to install a package called
-\texttt{scikit-learn} rather than \texttt{sklearn}.
+scientific code itself may be correct.
+
+\begin{sloppypar}
+The resulting error messages are short and technical, for example
+\texttt{ModuleNotFoundError: No module named 'sklearn'}. A researcher who
+is not a software developer may not know from the message alone that the
+fix is to install a package called \texttt{scikit-learn}, not
+\texttt{sklearn}.
+\end{sloppypar}
 
 \section{The FAIR Jupyter Pipeline and Its Remaining Gap}
 \label{sec:intro-gap}
@@ -49,11 +53,10 @@ incompatible operating system, rather than about the research code.
 Even this containerised pipeline stops at the point of \emph{detecting} a
 failure. When a notebook still does not run inside its container, the
 pipeline records the exception type and message and moves on. It does not
-explain the failure to a human reader, and it does not attempt a fix. Every
-notebook whose only problem is a missing or outdated Python package is left
-exactly as broken as it was found, even though such problems are, in
-principle, straightforward to repair by installing or pinning the right
-package version.
+explain the failure to a human reader, and it does not attempt a fix. Every notebook whose only problem is a missing or outdated Python
+package is left exactly as broken as it was found. Yet such problems
+are, in principle, straightforward to repair, by installing or pinning
+the right package version.
 
 This is the gap this thesis addresses: turning a detected, dependency-related
 notebook failure into an explained and, where possible, repaired one,
@@ -63,9 +66,10 @@ automatically and without a person in the loop for every single notebook.
 \label{sec:intro-contribution}
 
 This thesis adds a repair layer on top of the existing Docker-based FAIR
-Jupyter pipeline. The pipeline's own contribution ends at logging a failure;
-this thesis begins exactly there. Given a notebook execution that failed with
-a dependency-related error, the added layer performs five steps:
+Jupyter pipeline. The pipeline's own contribution ends at logging a
+failure. This thesis begins exactly there. Given a notebook execution
+that failed with a dependency-related error, the added layer performs
+five steps:
 
 \begin{enumerate}
   \item \textbf{Classify} the failure: is it really a dependency problem, and
@@ -76,31 +80,37 @@ a dependency-related error, the added layer performs five steps:
         model (LLM) whose suggestion is grounded in live package metadata
         from the Python Package Index (PyPI) rather than left to guess a
         version number from training data.
-  \item \textbf{Apply the repair} inside an environment equivalent to the one
-        the notebook originally failed in, and re-run the whole notebook from
-        the beginning.
+  \item \textbf{Apply the repair} inside a Docker environment rebuilt from
+        the same recipe the notebook originally ran under, and re-run the
+        whole notebook from the beginning.
   \item \textbf{Record the outcome}: whether the notebook now runs further,
         still fails, or could not be meaningfully tested.
   \end{enumerate}
 
-Grounding the repair suggestion in live PyPI data follows PLLM, the closest
-prior system to this one. Bartlett et
-al.~\cite{bartlett2025pllm} show that retrieval-augmented generation (RAG)
-against live package data measurably improves an LLM's dependency-repair
-accuracy compared to letting the model rely on what it happens to remember
-from training. This thesis adopts the same principle and applies it inside a
-reproducibility pipeline rather than to standalone Python scripts, and adds
-an explanation step and a re-execution-based validation step that PLLM does
-not have.
+When re-execution exposes a new dependency error that was hidden behind
+the first, the layer classifies and explains that error too and, if it is
+repairable, attempts one bounded second repair round. Two rounds is the
+cap.
+
+Grounding the repair suggestion in live PyPI data follows PLLM, the
+closest prior system to this one. Bartlett et al.~\cite{bartlett2025pllm}
+show that retrieval-augmented generation (RAG) against live package data
+measurably improves an LLM's dependency-repair accuracy, compared to
+letting the model rely on what it happens to remember from training.
+This thesis adopts the same principle, but applies it inside a
+reproducibility pipeline rather than to standalone Python scripts. It
+also adds an explanation step and a re-execution-based validation step,
+neither of which PLLM has.
 
 \subsection{Objectives}
 \label{sec:intro-objectives}
 
-The work is organised around six objectives, first defined in the thesis
-vision document and used throughout this text to relate individual
-components back to the overall goal.
+The work is organised around the six objectives in
+\Cref{tab:intro-objectives}, fixed at the start of the project and used
+throughout this text to relate individual components back to the overall
+goal.
 
-\begin{table}[h]
+\begin{table}[htbp]
   \centering
   \begin{tabular}{|l|p{10.5cm}|}
     \hline
@@ -116,66 +126,70 @@ components back to the overall goal.
     \hline
     O5 & Integrate the above into the existing FAIR Jupyter pipeline without manual intervention. \\
     \hline
-    O6 & Record repair outcomes as RDF triples in the FAIR Jupyter knowledge graph. \\
+    O6 & Record repair outcomes as RDF triples linked to the FAIR Jupyter knowledge graph. \\
     \hline
   \end{tabular}
-  \caption{Thesis objectives, as defined in the vision document.}
+  \caption{The six objectives this thesis is organised around.}
   \label{tab:intro-objectives}
 \end{table}
 
-\subsection{Status of This Thesis}
+\subsection{Research Questions}
+\label{sec:intro-rqs}
+
+The objectives say what was built. Three research questions say what the
+evaluation in \Cref{chap:validation} asks of it, and \Cref{chap:conclusion}
+answers each in turn.
+
+\begin{description}
+  \item[RQ1.] To what extent can an open LLM produce understandable,
+    structured explanations of the residual dependency-related failures
+    recorded by the FAIR Jupyter pipeline? This is answered on two levels:
+    automatically, by how many explanation calls completed and how many
+    completed responses satisfied the explanation schema, and by a human
+    study of how readers rated the explanations.
+  \item[RQ2.] How effectively can a PyPI-grounded, bounded repair pipeline
+    resolve the targeted dependency error, and how often does that restore
+    complete notebook execution? The two halves are kept apart throughout:
+    targeted-error resolution is measured per repair attempt, full notebook
+    recovery per notebook.
+  \item[RQ3.] How sensitive are the structured repair decisions and the
+    measured repair outcomes to the choice of open LLM, when the deterministic
+    retrieval, validation, and execution pipeline is held fixed and only
+    model- and provider-specific serving settings change?
+\end{description}
+
+\subsection{Summary of Results}
 \label{sec:intro-status}
 
-This thesis reports work completed through the result-logging and
-knowledge-graph implementation stage of a staged
-design-implementation-evaluation plan; \Cref{chap:methodology} explains,
-component by component,
-how each stage was actually built. As of this stage:
+All six objectives were implemented. The 187-row evaluation split
+described in \Cref{chap:problem-dataset} was reserved from prompt and
+repair-strategy tuning, and the results reported in \Cref{chap:validation}
+were generated by the final frozen implementation over that split, with a
+two-round budget, a real local language model (Gemma-2 9B), the live PyPI
+registry, and real Docker execution throughout. Four results frame the
+rest of this thesis and answer the three research questions.
 
-\begin{itemize}
-  \item Objectives O1, O2, and O3 are \textbf{implemented and tested}: a
-        classification and explanation component, a PyPI-grounded repair
-        proposal component, and a fix-application-and-re-execution component
-        all exist as working, unit-tested code.
-        % TODO-FULL-RUN: update after full orchestrated dataset execution
-        \fullrunupdate{Each has additionally been exercised against real
-        external systems (a real Ollama model, the real PyPI registry, a
-        real Docker daemon, and real GitHub repositories) only in a small
-        pilot, not yet over the complete dataset.}
-  \item Objectives O4 and O6 -- the reusable benchmark dataset and
-        knowledge-graph enrichment -- are \textbf{implemented and validated
-        at pilot scale}: a result-logging component persists one row per
-        repair attempt to a SQLite table, and an RDF mapping links each
-        logged attempt into the existing FAIR Jupyter knowledge graph.
-        % TODO-FULL-RUN: update after full repair_attempts and knowledge-graph population
-        \fullrunupdate{Both have been exercised and checked against real
-        pilot data, but neither has yet been run over the complete dataset.}
-  \item Objective O5, full pipeline integration, is \textbf{implemented and
-        validated by a small real pilot}: a single program
-        (\texttt{scripts/run\_pipeline.py}) now runs all five repair-layer
-        components, plus a bounded, max-two-round repair loop, over a given
-        slice of the dataset automatically, sharing one run identifier
-        across every stage it calls.
-        % TODO-FULL-RUN: update after full orchestrated dataset execution
-        \fullrunupdate{It has been run, with real Ollama/PyPI/Docker calls,
-        against a small number of development-split records -- not yet
-        automatically over the whole dataset. The benchmark table and the
-        knowledge graph so far hold only pilot-scale records rather than
-        the complete dataset.}
-        \Cref{chap:future-work} states exactly what remains.
-  % TODO-FULL-RUN: update once the full evaluation run exists
-  \item The validation performed so far is a
-        \textbf{small, real-system pilot}, not the thesis's final
-        evaluation.
-        \fullrunupdate{It shows that each component behaves correctly against
-        real data, including the result-logging and knowledge-graph
-        components; it does not yet measure an overall repair success rate
-        across the dataset. That measurement is planned future work.}
-\end{itemize}
-
-This distinction between what has been implemented and validated, and what
-is still planned, is kept explicit throughout this document rather than
-blurred for the sake of a stronger-sounding narrative.
+First (RQ1), the explainer completed 160 of the 187 original-failure
+explanations and all 50 explanations of errors newly exposed by a first
+repair; every completed response satisfied the explanation schema, and
+the 27 missing ones were timeouts or a service error of the local model
+deployment. A separate human study found the original-failure
+explanations generally well received: 15 participants gave 540 ratings,
+of which 88.9\% were Agree or Strongly Agree. Second (RQ2), 62 of the 73
+repair attempts actually made (84.9\%) removed the specific dependency
+error they targeted, and every repair proposal the model produced was
+schema-valid and grounded in retrieved PyPI evidence. Third (RQ2 again),
+no notebook in the evaluation split re-executed cleanly within the
+two-round budget. End-to-end recovery was limited by the repair agent's
+package mapping, which resolved the failing import often enough to reach
+the model in under a third of its invocations, and by the fact that many
+evaluated notebooks exposed further dependency errors in sequence.
+Fourth (RQ3), repeating the evaluation
+with a different open model, Qwen3.6-35B-A3B-MLX-8bit, left every
+aggregate repair figure unchanged; the two models differed on 13
+notebooks in which compatible NumPy release they selected to pin, with no
+effect on any measured repair outcome. \Cref{chap:validation} reports all four
+in full.
 
 \section{Thesis Structure}
 \label{sec:intro-structure}
@@ -187,9 +201,11 @@ scale of the reproducibility problem and how the concrete working dataset for
 this thesis was obtained. \Cref{chap:architecture} presents the system
 architecture: the five components introduced above, their contracts, and the
 data they exchange. \Cref{chap:methodology} is the core of the thesis: it
-explains, component by component, how each part was actually built, the
-decisions made along the way, and where the implementation ended up
-differing from the original design. \Cref{chap:validation} reports the
-automated test suite and the real-system pilot results obtained so far.
-\Cref{chap:future-work} separates what is finished from what remains.
-\Cref{chap:conclusion} closes the thesis with a summary of the contribution.
+explains, component by component, how each part was actually built and the
+decisions made along the way. \Cref{chap:validation} reports the automated
+test suite, the real-system pilots run during implementation, the final
+evaluation over the 187-row evaluation split, the model-sensitivity
+experiment, the human evaluation of explanation quality, and the threats to
+validity that bound all of these. \Cref{chap:future-work} sets out what
+remains open. \Cref{chap:conclusion} closes the thesis by answering the
+three research questions.

@@ -1,0 +1,8 @@
+metric,value
+proposal_validity_rate,1.0
+grounding_pass_rate,1.0
+grounded_proposal_rate_among_llm_invocations,1.0
+overall_grounded_proposal_coverage_rate,0.31063829787234043
+distribution_resolution_accuracy_on_manually_resolvable_diagnostic_sample,0.4117647058823529
+note,"Denominator is the manually resolvable rows in the frozen diagnostic sample (known-mapped + frequent-unmapped + ambiguous import names), not a random or population-representative sample - do not report as population-wide PyPI resolution accuracy."
+note_proposal_metrics,"proposal_validity_rate and grounding_pass_rate are conditioned on LLM repair responses only (i4 attempts where retrieval resolved a candidate and the LLM was actually invoked), and so is grounded_proposal_rate_among_llm_invocations (formerly named end_to_end_valid_grounded_proposal_rate - renamed because that name implied full coverage while silently excluding every pre-LLM abstention). overall_grounded_proposal_coverage_rate is the true full-population figure: grounded proposals divided by every repair-agent invocation across both rounds, abstentions included. A pipeline that abstains before the LLM on most records can still show 1.0 on the LLM-conditional metrics while overall_grounded_proposal_coverage_rate stays low - both numbers are correct, they answer different questions."

@@ -11,24 +11,16 @@
 \usepackage[colorlinks=false]{hyperref}
 \usepackage{cleveref}
 \usepackage{tocbibind}
-\usepackage{blindtext}
 \usepackage{subfigure}
-\usepackage{acronym}
+\usepackage[nohyperlinks]{acronym}
+\usepackage{longtable}
+\usepackage{array}   % ragged-right p{} columns in the wide tables
 \usepackage{tikz}
 \usetikzlibrary{positioning,fit,arrows.meta,calc}
 \usepackage{xcolor}
-
-% Visible marker for text that must be revisited once the full orchestrated
-% run / full evaluation exists. Renders as a light-yellow highlighted block
-% so temporary status text is impossible to miss while reading or revising.
-\newcommand{\fullrunupdate}[1]{%
-  \par\noindent
-  \colorbox{yellow!25}{%
-    \parbox{\dimexpr\linewidth-2\fboxsep}{%
-      \textbf{UPDATE AFTER FULL RUN:} #1%
-    }%
-  }%
-}
+\usepackage[section]{placeins} % forces a float barrier at every \section,
+                                % so a table/figure can never queue past the
+                                % section that introduces it
 
 \hypersetup{%
 bookmarksnumbered=true, hyperindex=true,
@@ -95,14 +87,20 @@ M.Sc. Web Engineering\\
 Dept. of Computer Science\\
 Chair of Computer Engineering
 \end{center}
-\vspace{3cm}
+
+\vfill
+
+\noindent
 Submitted by: Erisa Zaimi\\
 Student ID:\\
-Date: [Submission Date]\\
-\vspace{0.3cm}\\
-Supervising tutor: Dr. Sheeba Samuel \\
+Date: [Submission Date]
 
+\bigskip
 
+\noindent
+Supervising tutor: Dr. Sheeba Samuel
+
+\vspace{1cm}
 \end{titlepage}
 
 %---------------------------------------------------------
@@ -111,7 +109,9 @@ Supervising tutor: Dr. Sheeba Samuel \\
 
 \addchap*{Abstract}
 \input{src/abstract}
-\\\\
+
+\bigskip
+\noindent
 \textbf{Keywords: Jupyter notebooks, computational reproducibility, large
 language models, retrieval-augmented generation, dependency repair}
 
@@ -174,12 +174,12 @@ language models, retrieval-augmented generation, dependency repair}
 \input{src/methodology}
 
 %---------------------------------------------------------
-% Chapter 6: Current Validation and Observations
+% Chapter 6: Validation and Evaluation
 %---------------------------------------------------------
 \input{src/validation}
 
 %---------------------------------------------------------
-% Chapter 7: Remaining Work
+% Chapter 7: Future Work
 %---------------------------------------------------------
 \input{src/future_work}
 

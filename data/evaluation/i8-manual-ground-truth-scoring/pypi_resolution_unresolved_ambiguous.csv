@@ -1,0 +1,4 @@
+import_name,notes
+google,Ambiguous namespace; import name alone does not identify one unique PyPI distribution.
+openslide-bin,"Needs original import context; openslide-bin provides native binaries, while openslide-python provides the normal Python openslide import."
+bindingcalculator,No clear PyPI distribution identified; do not infer a mapping.

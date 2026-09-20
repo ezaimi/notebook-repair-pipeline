@@ -2,3 +2,4 @@ jsonschema>=4.0
 PyYAML>=6.0
 pytest>=8.0
 packaging>=23.0
+openai>=1.0

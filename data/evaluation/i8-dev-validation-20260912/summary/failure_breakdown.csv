@@ -1,0 +1,8 @@
+category,count
+unknown,0
+still_failing,1
+fixed,1
+abstained,9
+excluded,0
+method_failure,0
+infrastructure_failure,2

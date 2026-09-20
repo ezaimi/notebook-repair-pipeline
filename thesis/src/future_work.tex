@@ -1,150 +1,154 @@
-\chapter{Remaining Work}
+\chapter{Future Work}
 \label{chap:future-work}
 
-This chapter states plainly what has not been built yet, so that nothing in
-the preceding chapters is mistaken for a finished system. Result logging
-and knowledge-graph enrichment, listed as remaining work in an earlier
-draft of this chapter, have since been implemented and validated at pilot
-scale (\Cref{sec:m-resultlogger,sec:v-i6}); full pipeline orchestration,
-shared run-level metadata, and the bounded second repair round -- also
-listed as remaining work in an earlier draft -- have likewise since been
-implemented and validated by a small real pilot (see below). What is
-listed here is what none of that work yet covers: running any of it,
-unattended, over the full dataset, and the evaluation work that depends on
-having done so. Confirmed by direct inspection rather than assumed.
+The evaluation in \Cref{chap:validation} answers the research questions of this thesis, but
+also identifies several directions for further work. These concern the use of the
+knowledge-graph enrichment, wider repair coverage, comparison with a repair
+baseline, and a broader human evaluation.
 
-\section{Remaining Implementation}
+\section{Building on the Knowledge-Graph Enrichment}
+\label{sec:fw-kg}
 
-\paragraph{Full Pipeline Orchestration -- implemented.} \Cref{chap:architecture}
-describes an orchestrator that loops over every usable row, running
-classification, explanation, repair, fix application, and result logging
-in sequence and logging every attempt, including ones where a component
-itself fails. This loop is now implemented (\texttt{scripts/run\_pipeline.py})
-and exercised end to end, with real Ollama, PyPI, and Docker calls, against
-a small number of development-split records -- not yet the full 200-row
-usable set (see "Full-Dataset Population" and "Full Evaluation Run"
-below). Every component it calls -- ResultLogger included -- is called
-through its existing, unmodified interface; building the orchestrator
-required no redesign of any of them, only the two small, backwards-compatible
-plumbing additions described next and in \Cref{chap:architecture}.
+Objectives O4 and O6 are both met for the final evaluation, by two
+distinct artefacts that describe the same repair attempts. The
+\texttt{repair\_attempts} table of the final Gemma run holds one row per
+repair-agent invocation, 235 in all (187 Round-1 and 48 Round-2 rows),
+with the full explanation and PyPI evidence of every invocation. That
+table, with its CSV export, is the structured benchmark dataset of O4.
+The existing RML mapping, run over that export, materialised the same 235
+attempts as 3{,}478 triples, each linked to the notebook resource of the
+FAIR Jupyter knowledge graph that identifies the repaired notebook, and
+the result passed every validation check in union with the existing
+notebook graph (\Cref{sec:v-i6-fullscale}). That repair graph is the
+enrichment of O6 at evaluation scale; it has not yet been loaded into the
+public FAIR Jupyter triple store.
 
-\paragraph{Shared Run-Level Metadata -- implemented.} The orchestrator
-generates a single \texttt{run\_id} (shaped \texttt{i7-<UTC timestamp>}, or
-an explicit override) once per invocation and passes it into every call to
-LLMExplainer, RAGRepairAgent, and FixApplicator for every row and every
-round that invocation processes. RAGRepairAgent and FixApplicator already
-accepted an optional \texttt{run\_id} override before this change; no new
-parameter was needed on either. Every \texttt{repair\_attempts} row an
-orchestrated run writes now carries that same, genuinely shared, run
-identifier. ResultLogger's own per-record fallback behaviour
-(\Cref{sec:m-resultlogger-row}) is unchanged and still applies when a
-repair attempt has no matching fix-application outcome to fall back to.
+The first extension is deployment. The enriched triples exist as files
+next to the run that produced them. Loading them into the FAIR Jupyter
+triple store, beside the graph the upstream pipeline already publishes,
+would make repair history queryable at the same public SPARQL endpoint as
+the execution records it extends. Because the repair mapping is one more
+\texttt{.rml.ttl} file of the shape the upstream build script already
+iterates over, this requires running that script with the mapping and
+the export in place, not new tooling. Materialising a second run next to
+the first, such as the Qwen run of \Cref{sec:v-model-sensitivity}, would
+first require the repair-attempt IRI template to carry the run identifier
+as well as the row id, because each run's table numbers its rows from
+one.
 
-\paragraph{Bounded Second Repair Round -- implemented.} When FixApplicator
-reports \texttt{still\_failing} with a genuinely new error
-(\Cref{sec:v-key-observation}), the orchestrator now reclassifies that new
-error with the same classifier used for every original dataset row, and
-feeds it back into RAGRepairAgent for one further, bounded attempt --
-capped at two rounds in total, regardless of configuration; a third round
-is not reachable by any code path. Round 2 reuses RAGRepairAgent and
-FixApplicator unmodified, targets only the newly-exposed failure (never
-the original one), and re-applies Round 1's already-validated fix inside
-the freshly rebuilt Round 2 container before applying Round 2's own fix,
-so the notebook is re-executed against "original environment + Round 1 +
-Round 2," not "original environment + Round 2 only." \texttt{repair\_attempts.round}
-can now be \texttt{2}, and is, for the small pilot rows this chapter's
-"Full-Dataset Population" paragraph describes; a full second round only
-fires when the reclassified new error is itself pip-repair-eligible, which
-a real pilot case (\Cref{chap:validation}) showed is not guaranteed even
-when the new error is a genuine, different \texttt{missing\_package}
-failure -- see that chapter for what was actually observed.
+The second is richer use of the graph. The checks of
+\Cref{sec:v-i6-fullscale} ask structural questions: does every attempt
+link to a notebook, and does every executed attempt carry an outcome. The
+same graph can also answer the questions for which the summary tables of
+\Cref{chap:validation} were computed separately: which notebooks received
+a Round-2 attempt and after which Round-1 outcome, which failing modules
+abstained, and how the attempts of one run compare with those of another
+once both are loaded. This is possible because the round, the model, and
+the run identifier are recorded on every attempt. Written as SPARQL
+queries over the union of the upstream graph and the repair triples,
+these questions could be re-asked without returning to the SQLite table,
+and the repair history could be combined with the execution, module, and
+repository facts the graph already holds about the same notebooks.
 
-\paragraph{Full-Dataset Population of the Benchmark Table and Knowledge
-Graph.} ResultLogger, the CSV export, and the RML mapping
-(\Cref{sec:m-resultlogger}) are implemented and validated against real
-pilot data (\Cref{sec:v-i6}), and the orchestrator that would drive them
-over the full dataset now exists too, but none of them has been run over
-the complete 200-row usable set. The \texttt{repair\_attempts} table and
-the knowledge-graph triples derived from it currently hold only the small
-number of pilot records reported in \Cref{chap:validation}, not the full
-dataset. Populating them at full scale is now only a matter of invoking the
-orchestrator above over every usable row, not of building anything further.
+The third is a richer vocabulary. The mapping records the proposed
+package, version, and PyPI evidence as literals on the repair attempt.
+Modelling the installed distribution and its release as resources of
+their own, and linking each repair attempt to them, would connect repair
+provenance to package and version entities that other datasets could
+share. A query could then ask, for instance, which notebooks were
+repaired by pinning the same NumPy release. Repair actions this thesis
+deferred, such as replacing an import (\Cref{sec:fw-coverage}), and any
+further repair rounds would need no change to the mapping: its existing
+predicates already carry the action value and the round number.
 
-\section{Remaining Evaluation}
+\section{Widening Repair Coverage}
+\label{sec:fw-coverage}
 
-\paragraph{Full Evaluation Run.} The pilots in \Cref{chap:validation} cover
-fewer than ten records in total. The 187-row evaluation split reserved in
-\Cref{chap:problem-dataset} has not been run. The orchestrator needed to do
-so now exists (see above) and is deliberately defaulted away from that
-split during development to avoid consuming it prematurely; running it is
-now a matter of invoking that orchestrator 187 times with
-\texttt{-{}-split evaluation}, which has not been done.
+The single largest limit on this system's repair coverage is the static
+import-to-distribution mapping. It left 162 of 235 repair-agent
+invocations abstaining before the language model was reached
+(\Cref{sec:v-final-abstention}), and the model-sensitivity experiment
+showed this limit is shared across both models tested
+(\Cref{sec:v-model-sensitivity}). Extending the mapping table is the
+obvious first step, but it does not remove the underlying problem: any
+hand-curated table needs continued maintenance and cannot resolve a name
+it has never been told about. A more durable approach would resolve import
+names against a maintained external source, and fall back to abstention
+only when that source genuinely cannot answer.
 
-\paragraph{One-Round versus Two-Round Comparison.} Comparing repair success
-with and without the second repair round requires running the
-now-implemented orchestrator's two-round mode over the full evaluation
-split above and comparing it against a one-round run over the same split;
-neither run has been performed yet.
+Two further limits are narrower but real. The compatibility-evidence
+registry that supports \texttt{wrong\_version} repairs holds three
+hand-checked entries (\Cref{tab:m-compat}), which is enough for this
+dataset and no more. Deriving such evidence automatically from release
+notes or from a project's own API history would generalise it. The
+repair scope is pip-only by design (\Cref{sec:pd-scope}), which leaves
+the 10 \texttt{system\_library} records unrepairable and rules out fixing
+an API rename inside a notebook's own source. A related extension
+concerns the repository's declared dependency files, which the pipeline
+currently uses only to rebuild the baseline environment
+(\Cref{sec:m-repair-nodeps}). They could additionally be shown to the
+repair model as non-authoritative context, for instance to flag that a
+proposed pin conflicts with a version the repository declares, while PyPI
+evidence remains the only source from which a version may be drawn.
 
-\paragraph{Explanation Quality Evaluation.} The project plan includes a
-user study with Likert-scale scoring of explanation quality and a Cohen's
-kappa analysis of agreement between raters. This has not started; it
-depends on having a stable set of generated explanations to show
-participants, which \Cref{chap:validation} shows exists only for a handful
-of pilot rows so far.
+A third question the evaluation raised but could not answer is how much a
+larger repair budget would help. \Cref{sec:v-case-study} shows a notebook
+that exposed a third dependency error after two successful targeted
+repairs. Whether a third or fourth round would have recovered it, or
+whether notebooks of this kind have a long tail of dependency problems,
+is unmeasured: no run beyond two rounds was attempted.
 
-\paragraph{Baseline Comparison.} Comparing this system's repair success
-rate against a baseline (for example, a version of the repair agent without
-PyPI grounding) requires the full evaluation run above to exist first, so
-the two can be compared on the same rows.
+Two further points concern how the final runs were executed rather than
+what they repaired. First, the commit-pinning mechanism of FixApplicator
+was not in effect in the final evaluation environment
+(\Cref{sec:v-final-manifest}), so the evaluated repositories were cloned
+at their default-branch state. A rerun with the metadata database
+reachable from the execution environment would test each repository at the
+commit that originally failed, and would show whether any of the 187
+outcomes depends on changes the repository's authors made since. Second,
+the Gemma explainer lost 27 of 237 explanation records to timeouts of the
+local, CPU-only model service (\Cref{sec:v-final-explanation}). A larger
+timeout, or serving the same model on faster hardware, would separate how
+much of that gap is the machine and how much is the model; the present
+results cannot.
 
-\paragraph{Benchmark Dataset Finalisation.} Objective O4 calls for
-publishing the completed \texttt{repair\_attempts} table as a reusable
-benchmark. The table's schema, population logic, and knowledge-graph
-mapping are implemented and validated (\Cref{sec:m-resultlogger,sec:v-i6});
-publishing it as a finished benchmark still requires the full-dataset
-population above, which is the last step in the chain, since it depends on
-every step before it.
+\section{Baseline Comparison}
+\label{sec:fw-baseline}
 
-\section{Summary}
+This thesis reports how its own repair layer performs, not how it performs
+relative to an alternative. The most informative comparison would be
+against the same agent with PyPI grounding removed, so that the
+contribution of grounding could be isolated from the contribution of the
+model. Such a comparison could reuse the existing evaluation design
+without changing the dataset or the metric definitions of
+\Cref{chap:validation}. The ungrounded baseline has not been built and
+the comparison has not been run, so this thesis makes no claim about
+grounding's measured benefit.
 
-% TODO-FULL-RUN: revisit every row of this table once the full evaluation
-% run and full-scale knowledge-graph population are complete
-\Cref{tab:future-summary} separates what this thesis reports as done from
-what remains, to avoid any ambiguity.
+\section{Extending the Human Evaluation}
+\label{sec:fw-human}
 
-\begin{table}[h]
-  \centering
-  \begin{tabular}{|p{7.2cm}|l|}
-    \hline
-    \textbf{Item} & \textbf{Status} \\
-    \hline
-    Dataset preparation, classification, explanation, PyPI-grounded repair
-      proposal generation, fix application and re-execution &
-      Implemented, tested, pilot-validated \\
-    \hline
-    Result logging (SQLite) and knowledge-graph enrichment (RML mapping) &
-      Implemented, tested, pilot-validated \\
-    \hline
-    Full pipeline orchestration, incl.\ shared run-level metadata &
-      Implemented, tested, small-real-pilot-validated \\
-    \hline
-    Bounded second repair round & Implemented, tested, small-real-pilot-validated \\
-    \hline
-    Full-dataset population of \texttt{repair\_attempts} and the knowledge graph &
-      Not started \\
-    \hline
-    Full evaluation run (187-row split) & Not started \\
-    \hline
-    One-round vs.\ two-round comparison & Not started \\
-    \hline
-    Explanation quality evaluation (user study, Cohen's kappa) & Not started \\
-    \hline
-    Baseline comparison & Not started \\
-    \hline
-    Benchmark dataset finalisation & Not started \\
-    \hline
-  \end{tabular}
-  \caption{Completed work versus remaining work, at the time of writing.}
-  \label{tab:future-summary}
-\end{table}
+The human evaluation reported in \Cref{sec:v-human-eval-results} is a
+convenience sample of 15 participants, each rating six explanations from
+a frozen pool of 12, all of them Gemma explanations of original failures.
+It supports a descriptive picture only
+(\Cref{sec:v-human-eval-limitations}). The Round-2 explanations of
+newly exposed errors and the Qwen explanations were evaluated
+automatically for completion and schema validity only, and rating them
+with the same instrument is the most direct extension. Three further
+extensions would each answer a question the present study cannot.
+
+With an appropriate sampling and analysis design, a larger sample could
+support inferential comparisons rather than descriptive claims. A
+replication with expert raters, judging explanations
+against each notebook's true root cause, would measure objective
+correctness, which this study does not: Q6 captures only whether an
+explanation struck a reader as correct. Showing participants an
+alternative explanation, whether from a different model or from a non-LLM
+template, would place these results on a comparative scale.
+
+The free-text feedback points to one concrete improvement worth testing
+directly. Several participants asked for more about the likely cause and
+less restatement of the error message (\Cref{sec:v-human-eval-results}).
+Whether a revised prompt raises the satisfaction item without harming the
+others could be tested with the existing instrument and example pool.

@@ -2,6 +2,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
@@ -458,3 +460,75 @@ def test_main_writes_render_failed_row(monkeypatch, tmp_path):
     assert logged["explanation_result"]["status"] == "render_failed"
     assert logged["explanation_result"]["failure_category"] == "render_failed"
     assert "unknown_field" in logged["explanation_result"]["error"]
+
+
+# --- provider dispatch (LLM model-sensitivity supplementary experiment) -----
+# config/llm_explainer.yaml has no `provider` key, so every test above (all
+# unmodified) exercises the default "ollama" branch of call_llm() exactly
+# as they exercised call_ollama() directly before the dispatcher existed.
+# These tests target the dispatcher itself.
+
+def test_call_llm_defaults_to_ollama_when_provider_absent(monkeypatch):
+    """The real config/llm_explainer.yaml shape (no provider key) must
+    route through call_ollama(), never touch the Kiste transport."""
+    cfg = config()
+    assert "provider" not in cfg
+
+    def fail_if_kiste(*a, **k):
+        raise AssertionError("must not call the Kiste transport when provider is unset")
+
+    monkeypatch.setattr(run_llm_explainer.llm_providers, "call_kiste", fail_if_kiste)
+
+    def fake_call_ollama(model, prompt, generation_config):
+        return json.dumps(valid_response()), {"prompt_eval_count": 10, "eval_count": 20}
+
+    monkeypatch.setattr(run_llm_explainer, "call_ollama", fake_call_ollama)
+
+    result = run_llm_explainer.explain_one("prompt", cfg, SCHEMA)
+
+    assert result["status"] == "success"
+
+
+def test_explain_one_kiste_provider_dispatches_to_call_kiste(monkeypatch):
+    """provider: kiste (as in config/llm_explainer.kiste.yaml) must route
+    through llm_providers.call_kiste(), never call_ollama(), and the model
+    name/kiste config passed through unchanged."""
+    cfg = config()
+    cfg["provider"] = "kiste"
+    cfg["models"] = {"primary": "Qwen3.6-35B-A3B-MLX-8bit", "fallback": None}
+    cfg["kiste"] = {"base_url": "https://kiste.example.invalid/v1"}
+
+    def fail_if_ollama(*a, **k):
+        raise AssertionError("must not call the Ollama transport when provider is kiste")
+
+    monkeypatch.setattr(run_llm_explainer, "call_ollama", fail_if_ollama)
+
+    def fake_call_kiste(model, prompt, generation_config, kiste_config):
+        assert model == "Qwen3.6-35B-A3B-MLX-8bit"
+        assert kiste_config == {"base_url": "https://kiste.example.invalid/v1"}
+        return json.dumps(valid_response()), {"prompt_eval_count": 10, "eval_count": 20}
+
+    monkeypatch.setattr(run_llm_explainer.llm_providers, "call_kiste", fake_call_kiste)
+
+    result = run_llm_explainer.explain_one("prompt", cfg, SCHEMA)
+
+    assert result["status"] == "success"
+    assert result["tokens_input"] == 10
+    assert result["tokens_output"] == 20
+
+
+def test_build_llm_metadata_reports_kiste_model():
+    cfg = config()
+    cfg["provider"] = "kiste"
+    cfg["models"] = {"primary": "Qwen3.6-35B-A3B-MLX-8bit", "fallback": None}
+
+    metadata = run_llm_explainer.build_llm_metadata(cfg)
+
+    assert metadata["llm_model"] == "Qwen3.6-35B-A3B-MLX-8bit"
+
+
+def test_call_llm_raises_for_unknown_provider():
+    with pytest.raises(ValueError):
+        run_llm_explainer.call_llm(
+            model="x", prompt="y", generation_config={}, config={"provider": "not-a-real-provider"}
+        )

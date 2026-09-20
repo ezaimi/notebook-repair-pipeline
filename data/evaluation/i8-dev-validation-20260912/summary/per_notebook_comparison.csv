@@ -1,0 +1,14 @@
+notebook_execution_id,subtype,failing_module,round1_action,round1_outcome,round1_category,round2_eligible,round2_attempted,round2_action,round2_outcome,round2_category,final_category,additional_fix_from_round2,targeted_error_resolved_round1,targeted_error_resolved_round2,infrastructure_failure,run_id
+8,missing_package,sklearn,install,still_failing,still_failing,True,True,install,fixed,fixed,fixed,True,True,True,False,i8-dev-validation-20260912
+10,missing_package,matplotlib,none,,abstained,False,False,,,,abstained,False,,,False,i8-dev-validation-20260912
+17,missing_package,seaborn,none,,abstained,False,False,,,,abstained,False,,,False,i8-dev-validation-20260912
+19,missing_package,pyrosm,none,,abstained,False,False,,,,abstained,False,,,False,i8-dev-validation-20260912
+43,missing_package,pkg_resources,install,still_failing,still_failing,False,False,,,,still_failing,False,False,,False,i8-dev-validation-20260912
+45,missing_package,prody,none,,abstained,False,False,,,,abstained,False,,,False,i8-dev-validation-20260912
+49,missing_package,sklearn,install,apply_error,infrastructure_failure,False,False,,,,infrastructure_failure,False,False,,True,i8-dev-validation-20260912
+50,missing_package,dms_variants,none,,abstained,False,False,,,,abstained,False,,,False,i8-dev-validation-20260912
+60,missing_package,MulticoreTSNE,none,,abstained,False,False,,,,abstained,False,,,False,i8-dev-validation-20260912
+61,missing_package,umap,install,apply_error,infrastructure_failure,False,False,,,,infrastructure_failure,False,False,,True,i8-dev-validation-20260912
+157,wrong_version,scipy,pin_version,still_failing,still_failing,True,False,none,,abstained,abstained,False,True,,False,i8-dev-validation-20260912
+174,wrong_version,scipy,pin_version,still_failing,still_failing,True,False,none,,abstained,abstained,False,True,,False,i8-dev-validation-20260912
+188,wrong_version,numpy,pin_version,still_failing,still_failing,True,False,none,,abstained,abstained,False,True,,False,i8-dev-validation-20260912

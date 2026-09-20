@@ -1,0 +1,21 @@
+import_name,subtype_context,example_notebook_execution_id,frequency_in_dataset,pipeline_resolved_distribution,manual_correct_distribution,notes
+numpy,wrong_version,188,14,numpy,numpy,
+umap,missing_package,61,1,umap-learn,umap-learn,
+pkg_resources,missing_package,43,22,setuptools,standard-pkg-resources,Historically provided by setuptools; current standalone distribution is standard-pkg-resources.
+sklearn,missing_package,8,16,scikit-learn,scikit-learn,
+pandas,missing_package,310,1,pandas,pandas,
+cv2,missing_package,79,1,opencv-python,opencv-python,
+scipy,wrong_version,157,7,scipy,scipy,
+skimage,missing_package,253,6,scikit-image,scikit-image,
+rpy2,missing_package,255,15,,rpy2,
+cana,missing_package,115,12,,cana,
+celloracle,missing_package,385,12,,celloracle,
+keras,missing_package,80,7,,keras,
+omero,missing_package,369,5,,omero-py,
+physicool,missing_package,26,5,,physicool,
+google,missing_package,94,5,,,Ambiguous namespace; import name alone does not identify one unique PyPI distribution.
+gnomad,missing_package,211,5,,gnomad,
+dms_variants,missing_package,50,4,,dms-variants,
+openslide-bin,missing_package,406,4,,,"Needs original import context; openslide-bin provides native binaries, while openslide-python provides the normal Python openslide import."
+statsmodels,missing_package,311,4,,statsmodels,
+bindingcalculator,missing_package,66,4,,,No clear PyPI distribution identified; do not infer a mapping.

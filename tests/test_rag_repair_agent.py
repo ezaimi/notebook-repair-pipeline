@@ -1,3 +1,4 @@
+import copy
 import json
 import socket
 import sys
@@ -299,6 +300,110 @@ def test_usable_wrong_version_row_proceeds_to_retrieval(monkeypatch, config):
     assert result["retrieval_result"] is not None
     assert result["retrieval_result"]["subtype"] == "wrong_version"
     assert result["llm"] is not None
+
+
+# --- provider dispatch (LLM model-sensitivity supplementary experiment) -----
+# config/rag_repair.yaml has no `provider` key, so every test above (all
+# unmodified) exercises the default "ollama" branch of call_llm() exactly
+# as they exercised call_ollama() directly before the dispatcher existed.
+# These tests target the dispatcher itself.
+
+def kiste_config(config):
+    """A repair config shaped like config/rag_repair.kiste.yaml, built from
+    the real fixture rather than a hand-typed dict, so prompt/retry/output
+    values stay in sync with the actual repair_agent shape."""
+    cfg = copy.deepcopy(config)
+    real_repair_agent = cfg["repair_agent"]
+    cfg["repair_agent"] = {
+        "provider": "kiste",
+        "kiste": {
+            "base_url": "https://kiste.example.invalid/v1",
+            "model": "Qwen3.6-35B-A3B-MLX-8bit",
+            "temperature": 0.1,
+            "top_p": 0.9,
+            "max_tokens": 700,
+            "timeout_seconds": 300,
+        },
+        "prompt": real_repair_agent["prompt"],
+        "retry": real_repair_agent["retry"],
+        "output": real_repair_agent["output"],
+    }
+    return cfg
+
+
+def test_call_llm_defaults_to_ollama_when_provider_absent(monkeypatch, config):
+    """The real config/rag_repair.yaml shape (no provider key) must route
+    through call_ollama(), never touch the Kiste transport."""
+    assert "provider" not in config["repair_agent"]
+
+    def fail_if_kiste(*a, **k):
+        raise AssertionError("must not call the Kiste transport when provider is unset")
+
+    monkeypatch.setattr(rag_repair_agent.llm_providers, "call_kiste", fail_if_kiste)
+    mock_pypi(monkeypatch, "scikit-learn", ["1.7.2"])
+    monkeypatch.setattr(
+        rag_repair_agent, "call_ollama",
+        lambda **kwargs: (ollama_response("install", "scikit-learn", None), {}),
+    )
+
+    result = run_repair_agent(sklearn_record(), config)
+
+    assert result["status"] == "success"
+    assert result["final_install_name"] == "scikit-learn"
+
+
+def test_kiste_provider_dispatches_to_call_kiste_and_records_its_model(monkeypatch, config):
+    """provider: kiste (as in config/rag_repair.kiste.yaml) must route
+    through llm_providers.call_kiste(), never call_ollama(), and the
+    model/kiste config actually used must be the kiste ones, not any
+    leftover ollama defaults."""
+    cfg = kiste_config(config)
+
+    def fail_if_ollama(*a, **k):
+        raise AssertionError("must not call the Ollama transport when provider is kiste")
+
+    monkeypatch.setattr(rag_repair_agent, "call_ollama", fail_if_ollama)
+
+    def fake_call_kiste(model, prompt, generation_config, kiste_config):
+        assert model == "Qwen3.6-35B-A3B-MLX-8bit"
+        assert kiste_config["base_url"] == "https://kiste.example.invalid/v1"
+        return ollama_response("install", "scikit-learn", None), {
+            "prompt_eval_count": 42, "eval_count": 7,
+        }
+
+    monkeypatch.setattr(rag_repair_agent.llm_providers, "call_kiste", fake_call_kiste)
+    mock_pypi(monkeypatch, "scikit-learn", ["1.7.2"])
+
+    result = run_repair_agent(sklearn_record(), cfg)
+
+    assert result["status"] == "success"
+    assert result["llm"]["model"] == "Qwen3.6-35B-A3B-MLX-8bit"
+    assert result["final_install_name"] == "scikit-learn"
+
+
+def test_kiste_provider_never_calls_ollama_even_on_abstain(monkeypatch, config):
+    """Repeats the existing excluded-row zero-LLM-call guarantee under the
+    kiste provider, confirming the eligibility gate still runs before any
+    transport - provider dispatch never bypasses it."""
+    cfg = kiste_config(config)
+
+    def fail_if_any_llm(*a, **k):
+        raise AssertionError("must not call any LLM transport for an excluded row")
+
+    monkeypatch.setattr(rag_repair_agent, "call_ollama", fail_if_any_llm)
+    monkeypatch.setattr(rag_repair_agent.llm_providers, "call_kiste", fail_if_any_llm)
+
+    result = run_repair_agent(system_library_record(), cfg)
+
+    assert result["status"] == "abstained"
+
+
+def test_call_llm_raises_for_unknown_provider():
+    with pytest.raises(ValueError):
+        rag_repair_agent.call_llm(
+            model="x", prompt="y", generation_config={},
+            repair_agent_config={"provider": "not-a-real-provider"},
+        )
 
 
 # --- 2. deterministic signature extraction -----------------------------------

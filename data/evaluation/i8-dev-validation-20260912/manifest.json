@@ -1,0 +1,34 @@
+{
+  "config_hashes": {
+    "fix_applicator_config": "138aaf4f0552d43432dff5b86bb9cf8cd53286beda10893ce3d96e66dbe45637",
+    "llm_explainer_config": "ae3170258456f017f3ea8254b3a5ea570583c82dae2cc1de0d74b2d39dbdac7d",
+    "package_mapping": "e2231d9855b77f5b200597c6814f7d719be5fb73302d79e058e6a8f281e17562",
+    "prompts_dir": "76b232f04827ebc35d1cadd7e3cb2821cf9d8c30a10473885c65db3a218b86e4",
+    "rag_repair_config": "1760f298c4b778ae6c36f4774a5833e932ca37eb1190e30ca865e888f4a5d94f"
+  },
+  "config_paths": {
+    "explainer_config": "config/llm_explainer.yaml",
+    "fix_config": "config/fix_applicator.yaml",
+    "repair_config": "config/rag_repair.yaml"
+  },
+  "created_at": "2026-09-12T13:56:28.208346+00:00",
+  "database_path": "data/evaluation/i8-dev-validation-20260912/raw/repair_attempts.sqlite",
+  "expected_record_count": 13,
+  "explanation_prompt_version": "i3_prompt_v1",
+  "git_commit_sha": "4152d816787f5ef2a98811a0b75c8d1b17e3c42c",
+  "i2_path": "data/context-classification/dependency_error_contexts.jsonl",
+  "max_rounds": 2,
+  "model": "gemma2:9b",
+  "output_dir": "data/evaluation/i8-dev-validation-20260912/raw/pipeline-runs",
+  "prompt_strategy": "few_shot",
+  "python_version": "3.13.7",
+  "repair_prompt_version": "i4_prompt_v1",
+  "repository_metadata_db": {
+    "accessible": false,
+    "configured_path": "~/era/computational-reproducibility-pmc-docker/data/db/db.sqlite",
+    "reason": "file not found at resolved path",
+    "resolved_path": "C:\\Users\\zaimi\\era\\computational-reproducibility-pmc-docker\\data\\db\\db.sqlite"
+  },
+  "run_id": "i8-dev-validation-20260912",
+  "split": "dev"
+}
