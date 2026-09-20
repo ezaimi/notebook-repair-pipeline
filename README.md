@@ -1,41 +1,58 @@
-# MA Thesis: Integrating Open LLMs into the Jupyter Notebook Reproducibility Pipeline
+# Integrating Open Large Language Models into the Jupyter Notebook Reproducibility Pipeline
 
-**Student:** Erisa Zaimi  
-**Supervisor:** Dr. Sheeba Samuel  
-**Program:** M.Sc. Web Engineering — TU Chemnitz  
+**Student:** Erisa Zaimi
+**Supervisor:** Dr. Sheeba Samuel
+**Program:** M.Sc. Web Engineering — TU Chemnitz
 **Period:** 2025–2026
+
+## Thesis PDF
+
+**[Open the latest thesis PDF](https://gitlab.hrz.tu-chemnitz.de/vsr/edu/advising/ma-erisa-zaimi/-/blob/master/thesis/thesis.pdf)**
+— or [download it directly](https://gitlab.hrz.tu-chemnitz.de/vsr/edu/advising/ma-erisa-zaimi/-/raw/master/thesis/thesis.pdf?inline=false).
 
 ## Overview
 
-This repository contains all materials for my Master's thesis, which extends the [FAIR Jupyter](https://github.com/fusion-jena/FAIR-Jupyter) reproducibility pipeline with an LLM-based layer that automatically explains and repairs dependency-related failures in Jupyter notebooks.
+This thesis extends the [FAIR Jupyter](https://github.com/fusion-jena/FAIR-Jupyter)
+reproducibility pipeline, which detects and logs notebook execution failures but
+does not explain or repair them. The added layer classifies dependency errors,
+explains each one in plain language with a locally served open LLM, and derives a
+repair proposal grounded in live PyPI release data rather than in the model's own
+memory. Each proposal is applied and validated by rebuilding a Docker environment
+and re-executing the notebook from start to finish. Every attempt, including every
+abstention, is logged in a structured SQLite table that is exported and mapped to
+RDF triples linked to the FAIR Jupyter knowledge graph.
+
+## Pipeline
+
+```
+Dependency failure
+  → ErrorClassifier     (is it a repairable dependency error?)
+  → LLMExplainer        (plain-language explanation)
+  → RAGRepairAgent      (PyPI-grounded repair proposal, or abstention)
+  → FixApplicator       (apply the fix in a rebuilt Docker environment)
+  → Re-execution        (run the notebook top to bottom to validate)
+  → ResultLogger        (SQLite table → CSV → RDF)
+```
+
+A newly exposed error is carried through one bounded second round, after which the
+pipeline stops.
 
 ## Repository Structure
 
 ```
-├── thesis/          # LaTeX source and PDF drafts
-├── src/             # Pipeline extension source code
-├── data/            # Benchmark dataset (errors, fixes, outcomes)
-├── notebooks/       # Experiment notebooks
-├── docs/            # Additional documentation and vision document
-└── gantt/           # Project timeline and Gantt chart
+├── thesis/     # LaTeX sources and the compiled thesis PDF
+├── scripts/    # Pipeline components and evaluation tooling
+├── tests/      # Automated test suite for those components
+├── data/       # Dataset, evaluation runs, and result files
+└── docs/       # Design notes and supporting documentation
 ```
 
-## Scope
-
-- Detect dependency errors (`ModuleNotFoundError`, `ImportError`, version conflicts)
-- Generate plain-language explanations via a local open-source LLM
-- Suggest and apply fixes using PyPI-grounded RAG
-- Validate fixes by re-executing notebooks
-- Enrich the FAIR Jupyter Knowledge Graph with repair provenance (RDF triples)
+The thesis PDF is generated from the LaTeX sources under `thesis/`.
 
 ## Progress Tracking
 
-Tasks and milestones are tracked via [GitLab Issues](../../issues). See `gantt/` for the project timeline.
-
-## Setup
-
-_To be documented as the implementation progresses._
+Tasks and milestones are tracked via [GitLab Issues](../../issues).
 
 ## References
 
-Full references are listed in the thesis document (`thesis/`).
+Full references are listed in the thesis document.
