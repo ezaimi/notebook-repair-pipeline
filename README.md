@@ -7,8 +7,12 @@
 
 ## Thesis PDF
 
-**[Open the latest thesis PDF](https://gitlab.hrz.tu-chemnitz.de/vsr/edu/advising/ma-erisa-zaimi/-/blob/master/thesis/thesis.pdf)**
-— or [download it directly](https://gitlab.hrz.tu-chemnitz.de/vsr/edu/advising/ma-erisa-zaimi/-/raw/master/thesis/thesis.pdf?inline=false).
+**[Download the latest thesis PDF](https://gitlab.hrz.tu-chemnitz.de/vsr/edu/advising/ma-erisa-zaimi/-/jobs/artifacts/i9-llm-model-sensitivity-evaluation/raw/thesis/thesis.pdf?job=build_thesis)**
+— or [browse the build artifacts](https://gitlab.hrz.tu-chemnitz.de/vsr/edu/advising/ma-erisa-zaimi/-/jobs/artifacts/i9-llm-model-sensitivity-evaluation/browse/thesis?job=build_thesis).
+
+The PDF is not stored in Git. It is built from the LaTeX sources under `thesis/`
+by the GitLab CI job `build_thesis`, and the links above always resolve to the
+latest successful build of the `i9-llm-model-sensitivity-evaluation` branch.
 
 ## Overview
 
@@ -40,14 +44,12 @@ pipeline stops.
 ## Repository Structure
 
 ```
-├── thesis/     # LaTeX sources and the compiled thesis PDF
+├── thesis/     # LaTeX sources of the thesis
 ├── scripts/    # Pipeline components and evaluation tooling
 ├── tests/      # Automated test suite for those components
 ├── data/       # Dataset, evaluation runs, and result files
 └── docs/       # Design notes and supporting documentation
 ```
-
-The thesis PDF is generated from the LaTeX sources under `thesis/`.
 
 ## Progress Tracking
 

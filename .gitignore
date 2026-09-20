@@ -16,6 +16,10 @@ delete_issues_from_l3.py
 # Generated PDF
 thesis/TU_Chemnitz_positiv_gruen.pdf
 
+# Thesis PDF: built by the GitLab CI job build_thesis and published as a
+# job artifact, never versioned here.
+thesis/thesis.pdf
+
 .claude/*:Zone.Identifier
 __pycache__/
 *.pyc
