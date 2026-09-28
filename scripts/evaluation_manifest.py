@@ -26,6 +26,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import yaml
+
 
 DEFAULT_I2_PATH = "data/context-classification/dependency_error_contexts.jsonl"
 
@@ -56,9 +58,13 @@ DEFAULT_CODE_HASHED_PATHS = {
     "run_pipeline": "scripts/run_pipeline.py",
     "run_llm_explainer": "scripts/run_llm_explainer.py",
     "rag_repair_agent": "scripts/rag_repair_agent.py",
+    "pypi_retriever": "scripts/pypi_retriever.py",
     "fix_applicator": "scripts/fix_applicator.py",
     "result_logger": "scripts/result_logger.py",
     "evaluation_metrics": "scripts/evaluation_metrics.py",
+    "import_scope": "scripts/import_scope.py",
+    "requirements_evidence": "scripts/requirements_evidence.py",
+    "v2_provenance_enrichment": "scripts/enrich_v2_provenance.py",
 }
 
 
@@ -103,6 +109,39 @@ def build_config_hashes(
 ) -> Dict[str, Optional[str]]:
     hashed_paths = hashed_paths or DEFAULT_HASHED_PATHS
     return {name: hash_path(root / relpath) for name, relpath in hashed_paths.items()}
+
+
+def build_evidence_hashes(root: Path, repair_config_path: str) -> Dict[str, Any]:
+    """Record an optional closed PyPI snapshot separately from its config.
+
+    A repair configuration only contains the cache *path*; its own hash would
+    not reveal a later change to the snapshot contents. This block makes a
+    frozen comparison run resumable only against the exact same evidence.
+    """
+    try:
+        config = yaml.safe_load((root / repair_config_path).read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return {}
+    client = config.get("pypi_client", {}) if isinstance(config, dict) else {}
+    cache_path = client.get("frozen_cache_path") if isinstance(client, dict) else None
+    evidence: Dict[str, Any] = {}
+    if isinstance(cache_path, str) and cache_path:
+        evidence["frozen_pypi_cache"] = {
+            "path": cache_path,
+            "sha256": hash_path(root / cache_path),
+            "allow_network": bool(client.get("allow_network", True)),
+        }
+    resolver = config.get("resolver", {}) if isinstance(config, dict) else {}
+    if isinstance(resolver, dict):
+        for key, label in (
+            ("package_mapping_path", "v2_special_import_mapping"),
+            ("public_mapping_path", "public_import_mapping"),
+            ("public_mapping_provenance_path", "public_import_mapping_provenance"),
+        ):
+            value = resolver.get(key)
+            if isinstance(value, str) and value:
+                evidence[label] = {"path": value, "sha256": hash_path(root / value)}
+    return evidence
 
 
 # --- environment metadata -------------------------------------------------
@@ -302,12 +341,14 @@ def build_manifest(
         "output_dir": output_dir,
         "repository_metadata_db": check_repository_metadata_db(repository_metadata_db_path),
         "config_hashes": build_config_hashes(root, hashed_paths),
+        "evidence_hashes": build_evidence_hashes(root, repair_config_path),
         # New optional blocks (absent from frozen I8/I9 manifests): the
         # identity of the code that ran, and behavioural facts derived from
         # it. See DEFAULT_CODE_HASHED_PATHS / detect_orchestrator_features().
         "code_hashes": build_code_hashes(root),
         "orchestrator_features": detect_orchestrator_features(root),
         "i2_path": i2_path,
+        "i2_sha256": hash_path(i2_full_path),
     }
 
 
@@ -338,6 +379,7 @@ CONSISTENCY_FIELDS = [
     "repair_prompt_version",
     "expected_record_count",
     "config_hashes",
+    "evidence_hashes",
 ]
 
 

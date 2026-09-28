@@ -1,0 +1,71 @@
+{
+  "code_hashes": {
+    "evaluation_metrics": "aac6a4c9d01bb681adc8eb84632c13f194f1b598aec8e69cff7abdb7b02cbb44",
+    "fix_applicator": "0f9dedf85434ea446b6be0908e65d667bac315598ef3c31b5de9ff1109b809ee",
+    "import_scope": "87aacaea4cd76ac2fed98a40cc56054eec5dfc2158468254ac0e52356260321d",
+    "pypi_retriever": "52c9da1b9d29e6f650d7cceff9e37e4f05cf75d1059651ec291398aa8be484be",
+    "rag_repair_agent": "2897db5af68a3fda78b6642401860d5a3cd42842a202694da6b58d907b6f6f4d",
+    "requirements_evidence": "b316dd7ac4b5a579ee25d4e98528524086ea9b0d82406b1a164e013b32a843e8",
+    "result_logger": "128c18c162a15e9d20ed58a0e4a114ec2e08f1858add86ea81ea4123c5b284ab",
+    "run_llm_explainer": "ac4cc932472b5da31413832fac840219b10fc9dcd07b3e6a9508a522f75aac59",
+    "run_pipeline": "921e724b2751e64be4151796beb960f1272a778b5f3fb928063ea3eb29cdda47",
+    "v2_provenance_enrichment": "19997a4e49baf22436a803d915b09bd76afa4baab61fe7cc6b1b71b326cd8b92"
+  },
+  "config_hashes": {
+    "fix_applicator_config": "62f5da557548ab78dd36606d19a092e305335203818160174fec83a389362999",
+    "llm_explainer_config": "fc560d5b8d9a8b0891d3df4bd07fb08e82c0dff4f4c34ab86f6da363d1331d5b",
+    "package_mapping": "e2231d9855b77f5b200597c6814f7d719be5fb73302d79e058e6a8f281e17562",
+    "prompts_dir": "6bcf1ddd527b1cc4300a9d410dc573d709f398fcabee6e8957026cacb89ed89c",
+    "rag_repair_config": "bbf715a23f08d75ed82e66457c5f0e83d49c22b938a4fec26d36ae4b9cb41f86"
+  },
+  "config_paths": {
+    "explainer_config": "config/llm_explainer.v2.qwen.yaml",
+    "fix_config": "config/fix_applicator.v2.qwen.local.yaml",
+    "repair_config": "config/rag_repair.v2.qwen-shared-comparison.yaml"
+  },
+  "created_at": "2026-09-27T17:24:29.318293+00:00",
+  "database_path": "C:\\Users\\zaimi\\AppData\\Local\\Temp\\qwen-v2-shared-comparison-evaluation-20260927T192427Z.sqlite",
+  "evidence_hashes": {
+    "frozen_pypi_cache": {
+      "allow_network": false,
+      "path": "data/pllm-style-baseline/shared-comparison-pypi-cache.json",
+      "sha256": "e98b0ef696e48c910dccbd9153a448e8e37863fca83f9a5780cdeaff53a63538"
+    },
+    "public_import_mapping": {
+      "path": "data/public-import-mapping/pipreqs-mapping.txt",
+      "sha256": "bc02385c473b7ccfdc2c67697df423feaa394023f5f1d59693c86a5a0dcd7e50"
+    },
+    "public_import_mapping_provenance": {
+      "path": "data/public-import-mapping/pipreqs-mapping-provenance.json",
+      "sha256": "ee173d72617d62b6b043c8570ef912b6c5e7d48c3c3b357aeb1f8da41ca9a1c9"
+    },
+    "v2_special_import_mapping": {
+      "path": "config/package_mapping.v2.yaml",
+      "sha256": "6b6197430edd4fa069c2675b158f107a58a6b00df558c13cffed22eddf0fd30a"
+    }
+  },
+  "expected_record_count": 187,
+  "explanation_prompt_version": "i3_prompt_v1",
+  "git_commit_sha": "0e5c621787a9a815ac4c36958db48eabd3c47ee7",
+  "git_working_tree_dirty": true,
+  "i2_path": "data/context-classification-v2/dependency_error_contexts.jsonl",
+  "i2_sha256": "510e79649ac92dfb2c9e0b40aa0aa292fd335ee3e611457122a17671571394a4",
+  "max_rounds": 2,
+  "model": "Qwen3.6-35B-A3B-MLX-8bit",
+  "orchestrator_features": {
+    "round2_explanation": true
+  },
+  "output_dir": "\\\\wsl.localhost\\Ubuntu\\home\\zaimi\\era\\ma-erisa-zaimi\\data\\evaluation\\qwen-v2-shared-comparison-evaluation-20260927T192427Z\\raw\\pipeline-runs",
+  "prompt_strategy": "few_shot",
+  "python_version": "3.13.7",
+  "repair_prompt_version": "i4_prompt_v1",
+  "repository_metadata_db": {
+    "accessible": true,
+    "configured_path": "C:\\Users\\zaimi\\i8-eval-local-cache\\upstream_pmc_docker_db.sqlite",
+    "reason": null,
+    "resolved_path": "C:\\Users\\zaimi\\i8-eval-local-cache\\upstream_pmc_docker_db.sqlite",
+    "sha256": "ce049a7e5853a703f12b789e4dd2ef0f9d9b6d3cc7fbd88a237c7d963623a8a6"
+  },
+  "run_id": "qwen-v2-shared-comparison-evaluation-20260927T192427Z",
+  "split": "evaluation"
+}

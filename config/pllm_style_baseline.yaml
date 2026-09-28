@@ -1,0 +1,42 @@
+# Configuration for the notebook-adapted PLLM-style baseline.
+#
+# This is deliberately separate from config/rag_repair.yaml. In particular,
+# it reads PLLM's own module-link table rather than this thesis's
+# package_mapping.yaml, and it performs no thesis proposal-schema or
+# grounding-validation gate.
+
+baseline:
+  # The upstream FAIR Jupyter Docker recipe executes every repository with
+  # Python 3.10. Candidate PyPI releases must therefore support this runtime.
+  runtime_python_version: "3.10"
+
+  model:
+    url: "http://localhost:11434/api/generate"
+    name: "gemma2:9b"
+    temperature: 0.1
+    top_p: 0.9
+    max_tokens: 700
+    timeout_seconds: 300
+
+  # The reference table is from the checked PLLM source revision recorded in
+  # docs/pllm_original_compatibility_assessment.md. It is intentionally not
+  # config/package_mapping.yaml.
+  reference_module_link: "third_party/fse-aiware-python-dependencies/tools/pllm/helpers/ref_files/module_link.json"
+
+  pypi:
+    base_url: "https://pypi.org/pypi"
+    # This cache is hydrated from PLLM's reference table and then locked
+    # before any evaluation-split notebook is processed.
+    cache_path: "data/pllm-style-baseline/frozen-pypi-cache.json"
+    allow_network: false
+    candidate_version_limit: 12
+
+  repair:
+    max_rounds: 2
+    prompt_version: "pllm_style_notebook_v1"
+
+dataset:
+  i2_path: "data/context-classification/dependency_error_contexts.jsonl"
+
+output:
+  trace_directory: "data/pllm-style-baseline"

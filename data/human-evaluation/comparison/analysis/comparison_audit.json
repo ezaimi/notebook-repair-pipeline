@@ -1,0 +1,24 @@
+{
+  "input_file": "data\\human-evaluation\\comparison\\comparison_responses.csv",
+  "raw_rows": 109,
+  "excluded_empty_rows": 13,
+  "valid_rating_rows": 96,
+  "participants": 16,
+  "rows_per_participant": [
+    [
+      6,
+      16
+    ]
+  ],
+  "ratings_per_method": {
+    "llm": 48,
+    "template": 48
+  },
+  "responses_per_variant": {
+    "A": 18,
+    "B": 18,
+    "C": 30,
+    "D": 30
+  },
+  "note": "Descriptive comparison only. Repeated ratings from the same participant are not treated as independent observations."
+}

@@ -1,0 +1,7 @@
+scope,item,n,median,iqr,pct_agree_or_strongly_agree
+overall,q1_understanding,90,5.0,1.0,92.22222222222223
+overall,q2_satisfaction,90,4.0,1.0,84.44444444444444
+overall,q3_detail,90,5.0,1.0,91.11111111111111
+overall,q4_completeness,90,4.0,1.0,91.11111111111111
+overall,q5_usefulness,90,5.0,1.0,87.77777777777777
+overall,q6_perceived_correctness,90,5.0,1.0,86.66666666666667

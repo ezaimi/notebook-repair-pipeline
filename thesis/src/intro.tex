@@ -15,18 +15,20 @@ tries them. Pimentel et al.~\cite{pimentel2019msr} collected 1.4~million
 notebooks from GitHub and attempted to execute a large subset of them: only
 24.11\% ran without errors, and only 4.03\% reproduced the results reported by
 their original authors. Samuel and Mietchen~\cite{samuel2024gigascience}
-found a similar pattern specifically for notebooks accompanying biomedical
-publications on PubMed Central, the domain this thesis also builds on. These
-numbers show that non-reproducible notebooks are not a rare exception; they
-are the common case.
+studied notebooks accompanying biomedical publications on PubMed Central, the
+domain this thesis also builds on. Of 10,388 re-executed notebooks, 1,203
+(11.6\%) ran without an error and 879 (8.5\%) produced results identical to
+those stored in the original notebook. These numbers show that execution failures 
+were common in the notebooks examined by these studies.
 
-A large share of these failures is caused by dependencies, not by mistakes in
-the underlying research logic. A notebook is written against a particular set
-of installed Python packages. When it is later run in a different
-environment, a package may be missing entirely, or a newer version of a
-package may no longer provide the exact function the notebook expects. Both
-situations produce an error before the notebook can finish, even though the
-scientific code itself may be correct.
+Many notebook execution failures are dependency-related and occur before the
+analysis logic can be evaluated~\cite{pimentel2019msr,samuel2024gigascience}.
+A notebook is written against a particular set of installed Python packages.
+When it is later run in a different environment, a package may be missing
+entirely, or a newer version of a package may no longer provide the exact
+function the notebook expects. Both situations stop execution before results can
+be produced; the error alone does not show whether the underlying analysis is
+correct.
 
 \begin{sloppypar}
 The resulting error messages are short and technical, for example
@@ -35,6 +37,63 @@ is not a software developer may not know from the message alone that the
 fix is to install a package called \texttt{scikit-learn}, not
 \texttt{sklearn}.
 \end{sloppypar}
+
+Large language models (LLMs) can help where a technical error message alone is
+not enough. In this pipeline, an LLM explains a dependency failure in plain
+language, helps interpret the relationship between an import name and a Python
+package, and can suggest a possible package when the pipeline cannot identify
+one directly. Open-weight LLMs are particularly suitable because they can run
+on local or institutional hardware instead of requiring a proprietary external
+API.
+
+The model is not treated as an unquestioned source of repair commands. Package
+information and notebook re-execution are used to check its suggestions before
+a repair is accepted. This combines the language-understanding ability of an
+LLM with an evidence-based repair process.
+
+\begin{figure}[htbp]
+  \centering
+  \begin{tikzpicture}[
+    stage/.style={draw=black!65, rounded corners=2pt, align=center,
+      font=\scriptsize, text width=0.14\textwidth, minimum height=3.0cm,
+      inner sep=3pt},
+    flow/.style={-{Latex[length=2mm]}, thick, black!65}
+  ]
+    \node[stage, fill=red!8] (failure) {\textbf{Notebook 198}\\[2pt]
+      \texttt{ImportError}\\
+      from \texttt{numpy}};
+    \node[stage, fill=yellow!10, right=2mm of failure] (classification) {\textbf{Classification}\\[2pt]
+      Incompatible\\
+      package version\\
+      and repair eligible};
+    \node[stage, fill=blue!7, right=2mm of classification] (explanation) {\textbf{LLM explanation}\\[2pt]
+      The notebook expects a\\
+      NumPy name unavailable\\
+      in the installed version.};
+    \node[stage, fill=purple!8, right=2mm of explanation] (evidence) {\textbf{Package evidence}\\[2pt]
+      Verified compatible\\
+      NumPy versions\\
+      are retrieved.};
+    \node[stage, fill=green!8, right=2mm of evidence] (repair) {\textbf{LLM version choice}\\[2pt]
+      Select\\
+      \texttt{numpy==1.24.1}\\
+      from that list.};
+    \node[stage, fill=orange!10, right=2mm of repair] (final) {\textbf{Docker re-execution}\\[2pt]
+      Apply the pin and run\\
+      the full notebook.\\[2pt]
+      \textbf{Successful}};
+    \draw[flow] (failure) -- (classification);
+    \draw[flow] (classification) -- (explanation);
+    \draw[flow] (explanation) -- (evidence);
+    \draw[flow] (evidence) -- (repair);
+    \draw[flow] (repair) -- (final);
+  \end{tikzpicture}
+  \caption{Notebook execution id~198 from the 187-record evaluation. The
+  classifier identified an incompatible NumPy version. Gemma-2~9B selected
+  \texttt{numpy==1.24.1} from the verified compatible-version list; Docker
+  re-execution then completed successfully.}
+  \label{fig:intro-repair-example}
+\end{figure}
 
 \section{The FAIR Jupyter Pipeline and Its Remaining Gap}
 \label{sec:intro-gap}
@@ -45,22 +104,63 @@ notebooks referenced by biomedical publications, executes them, and records
 whether each notebook ran and, if not, what error occurred. The results were
 organised into a queryable knowledge graph~\cite{samuel2024fairkg} so that
 patterns in notebook reproducibility could be studied directly. A more recent
-extension of the same pipeline~\cite{samuel2025docker} runs every repository
-inside its own Docker container before execution. Containerisation removes
-many failures that were really about a missing system tool or an
-incompatible operating system, rather than about the research code.
+extension of the same pipeline~\cite{samuel2025docker} reconstructs each
+repository in a Docker environment before execution. It also infers
+dependencies from notebook imports and adds them to the repository dependency
+configuration. The remaining failures therefore represent notebooks that
+still do not execute after these upstream preparation steps.
+
+The recorded Docker run used in this thesis has the funnel shown in
+\Cref{tab:intro-docker-funnel}. Of the 443 notebook executions from 83
+repositories, 59 completed successfully without an error and 384 recorded
+an error. Dependency errors form the largest recorded failure category, with
+214 recorded dependency-error executions. If every one of these 214 notebook
+executions could be made fully
+successful, and no other outcome changed, the success rate would increase
+from 13.3\% (59/443) to 61.6\% (273/443). This is a theoretical upper
+bound of 48.3 percentage points, rather than an expected result, because
+removing the first dependency error can reveal a later dependency or
+non-dependency error.
+
+\begin{table}[htbp]
+  \centering
+  \small
+  \begin{tabular}{|l|r|}
+    \hline
+    \textbf{Stage in the Docker-pipeline funnel} & \textbf{Count} \\
+    \hline
+    Repositories with recorded notebook executions & 83 \\
+    \hline
+    Notebook executions recorded & 443 \\
+    \hline
+    Successful executions & 59 \\
+    \hline
+    Executions with an error & 384 \\
+    \hline
+    Dependency-error executions & 214 \\
+    \hline
+  \end{tabular}
+  \caption{The Docker-pipeline funnel for the run used in this thesis. The
+  214 dependency-error records enter classification and explanation; 200 are
+  within the pip-based automated repair scope.}
+  \label{tab:intro-docker-funnel}
+\end{table}
 
 Even this containerised pipeline stops at the point of \emph{detecting} a
 failure. When a notebook still does not run inside its container, the
 pipeline records the exception type and message and moves on. It does not
-explain the failure to a human reader, and it does not attempt a fix. Every notebook whose only problem is a missing or outdated Python
-package is left exactly as broken as it was found. Yet such problems
-are, in principle, straightforward to repair, by installing or pinning
-the right package version.
+explain the failure to a human reader or attempt a repair. Some failures have
+a local cause that is within this thesis's scope, such as a missing
+third-party Python package or an incompatible package version. Repairing the
+first error does not necessarily make the whole notebook executable: it can
+reveal another dependency error, or a different kind of error, later in
+execution. For this reason, every approved repair is checked by re-executing
+the complete notebook, and the pipeline attempts at most two repair rounds.
 
-This is the gap this thesis addresses: turning a detected, dependency-related
-notebook failure into an explained and, where possible, repaired one,
-automatically and without a person in the loop for every single notebook.
+This is the gap this thesis addresses: turning a detected dependency-related
+notebook failure into an explained and, where supported by sufficient
+evidence, repaired one without requiring manual investigation of every
+notebook.
 
 \section{Contribution of This Thesis}
 \label{sec:intro-contribution}
@@ -72,17 +172,15 @@ that failed with a dependency-related error, the added layer performs
 five steps:
 
 \begin{enumerate}
-  \item \textbf{Classify} the failure: is it really a dependency problem, and
-        if so, is it a missing package or an incompatible version?
+  \item \textbf{Classify} the failure: identify the failing import and
+        determine whether the error is within the pip-based repair scope.
   \item \textbf{Explain} the failure in plain language, so that a researcher
         without a programming background can understand what went wrong.
-  \item \textbf{Propose a repair}, using an open, locally-run large language
-        model (LLM) whose suggestion is grounded in live package metadata
-        from the Python Package Index (PyPI) rather than left to guess a
-        version number from training data.
-  \item \textbf{Apply the repair} inside a Docker environment rebuilt from
-        the same recipe the notebook originally ran under, and re-run the
-        whole notebook from the beginning.
+  \item \textbf{Derive a repair proposal}, using verified PyPI package
+        information and, where language-based judgement is needed, an open,
+        locally run LLM. The proposal is checked before it is applied.
+  \item \textbf{Apply the repair} at the recorded repository commit in its
+        Docker environment, and re-run the whole notebook from the beginning.
   \item \textbf{Record the outcome}: whether the notebook now runs further,
         still fails, or could not be meaningfully tested.
   \end{enumerate}
@@ -92,46 +190,84 @@ the first, the layer classifies and explains that error too and, if it is
 repairable, attempts one bounded second repair round. Two rounds is the
 cap.
 
-Grounding the repair suggestion in live PyPI data follows PLLM, the
-closest prior system to this one. Bartlett et al.~\cite{bartlett2025pllm}
-show that retrieval-augmented generation (RAG) against live package data
-measurably improves an LLM's dependency-repair accuracy, compared to
-letting the model rely on what it happens to remember from training.
-This thesis adopts the same principle, but applies it inside a
-reproducibility pipeline rather than to standalone Python scripts. It
-also adds an explanation step and a re-execution-based validation step,
-neither of which PLLM has.
+PLLM is the closest prior system to this work. Bartlett et
+al.~\cite{bartlett2025pllm} show that retrieval-augmented generation (RAG)
+over package data can support LLM-based dependency repair. Both PLLM and this
+thesis validate a proposed repair through execution feedback. The key
+difference is the unit of operation: PLLM targets standalone Python files,
+whereas this thesis operates on notebook failures recorded by the FAIR Jupyter
+pipeline. The present pipeline also reconstructs a repository-specific Docker
+environment, limits repair to two rounds, provides a human-readable
+explanation, and records structured outcomes for knowledge-graph export. A
+direct execution of PLLM would therefore not provide a like-for-like notebook
+comparison; \Cref{sec:v-pllm-comparison} uses a notebook-adapted PLLM-style
+baseline instead.
 
 \subsection{Objectives}
 \label{sec:intro-objectives}
 
-The work is organised around the six objectives in
-\Cref{tab:intro-objectives}, fixed at the start of the project and used
-throughout this text to relate individual components back to the overall
-goal.
+The work combines three research questions with six implementation
+objectives. The research questions state what the evaluation investigates,
+whereas the objectives state what had to be built to make that evaluation
+possible. \Cref{tab:intro-objectives} links each objective to the component
+that implements it, a measurable acceptance criterion, and the research
+question it supports.
 
-\begin{table}[htbp]
-  \centering
-  \begin{tabular}{|l|p{10.5cm}|}
+{\footnotesize
+  \renewcommand{\arraystretch}{1.0}
+  \begin{longtable}{|>{\raggedright\arraybackslash}p{0.8cm}|>{\raggedright\arraybackslash}p{3.1cm}|>{\raggedright\arraybackslash}p{3.0cm}|>{\raggedright\arraybackslash}p{4.6cm}|}
     \hline
-    \textbf{Objective} & \textbf{Description} \\
+    \textbf{ID} & \textbf{Objective} &
+    \textbf{Implemented component(s)} &
+    \textbf{Acceptance criterion and RQ link} \\
     \hline
-    O1 & Generate a plain-language explanation of a dependency-related failure. \\
+    O1 &
+    Generate a plain-language explanation of a dependency-related failure. &
+    LLMExplainer &
+    Explanation completion and schema-validity rates are reported, together
+    with human ratings of explanation quality (RQ1). \\
     \hline
-    O2 & Generate an automated, PyPI-grounded fix suggestion using an open LLM. \\
+    O2 &
+    Generate an evidence-grounded repair proposal for a repair-eligible
+    failure. &
+    RAGRepairAgent &
+    Every approved repair is checked against retrieved PyPI evidence;
+    proposal, grounding, abstention, and decision-source counts are reported,
+    including a deterministic-policy ablation (RQ2). \\
     \hline
-    O3 & Apply the suggested fix and validate it by re-executing the notebook. \\
+    O3 &
+    Apply the suggested fix and validate it by re-executing the notebook. &
+    FixApplicator &
+    Each real repair attempt has a recorded Docker outcome: fixed, still
+    failing, or apply error (RQ2). \\
     \hline
-    O4 & Compile a structured, reusable benchmark dataset of failures, fixes, and outcomes. \\
+    O4 &
+    Compile a structured, reusable dataset of failures, fixes, and outcomes. &
+    ResultLogger &
+    The dataset contains machine-readable records for all 214 extracted
+    dependency errors, including split, classification, repair information,
+    and outcome fields; it supports RQ1--RQ3. \\
     \hline
-    O5 & Integrate the above into the existing FAIR Jupyter pipeline without manual intervention. \\
-    \hline
-    O6 & Record repair outcomes as RDF triples linked to the FAIR Jupyter knowledge graph. \\
-    \hline
-  \end{tabular}
-  \caption{The six objectives this thesis is organised around.}
-  \label{tab:intro-objectives}
-\end{table}
+    O5 &
+Combine the components into a standalone automated repair pipeline. &
+Orchestrator &
+The pipeline processes all 187 evaluation records without manual intervention
+and produces a run manifest, execution trace, and repair-attempt database
+(RQ1--RQ3). \\
+\hline
+O6 &
+Represent repair outcomes in RDF for interoperability with the FAIR Jupyter
+knowledge graph. &
+ResultLogger and RDF export &
+Repair outcomes are exported as RDF using the defined mapping, retain the
+relevant notebook identifiers, and pass the structural validation checks
+(RQ2). \\
+        \hline
+    \caption{Implementation objectives, their implementing components,
+    acceptance criteria, and relationship to the research questions.}
+    \label{tab:intro-objectives}
+\end{longtable}
+}
 
 \subsection{Research Questions}
 \label{sec:intro-rqs}
@@ -143,15 +279,12 @@ answers each in turn.
 \begin{description}
   \item[RQ1.] To what extent can an open LLM produce understandable,
     structured explanations of the residual dependency-related failures
-    recorded by the FAIR Jupyter pipeline? This is answered on two levels:
-    automatically, by how many explanation calls completed and how many
-    completed responses satisfied the explanation schema, and by a human
-    study of how readers rated the explanations.
+    recorded by the FAIR Jupyter pipeline?
+
   \item[RQ2.] How effectively can a PyPI-grounded, bounded repair pipeline
     resolve the targeted dependency error, and how often does that restore
-    complete notebook execution? The two halves are kept apart throughout:
-    targeted-error resolution is measured per repair attempt, full notebook
-    recovery per notebook.
+    complete notebook execution?
+
   \item[RQ3.] How sensitive are the structured repair decisions and the
     measured repair outcomes to the choice of open LLM, when the deterministic
     retrieval, validation, and execution pipeline is held fixed and only
@@ -161,35 +294,36 @@ answers each in turn.
 \subsection{Summary of Results}
 \label{sec:intro-status}
 
-All six objectives were implemented. The 187-row evaluation split
-described in \Cref{chap:problem-dataset} was reserved from prompt and
-repair-strategy tuning, and the results reported in \Cref{chap:validation}
-were generated by the final frozen implementation over that split, with a
-two-round budget, a real local language model (Gemma-2 9B), the live PyPI
-registry, and real Docker execution throughout. Four results frame the
-rest of this thesis and answer the three research questions.
+The 187-record evaluation split described in \Cref{chap:problem-dataset}
+was reserved from prompt and repair-strategy tuning. The live-PyPI evaluation
+used Gemma-2~9B, a two-round budget, and repository-specific Docker
+re-execution. The following results frame the rest of this thesis.
 
-First (RQ1), the explainer completed 160 of the 187 original-failure
-explanations and all 50 explanations of errors newly exposed by a first
-repair; every completed response satisfied the explanation schema, and
-the 27 missing ones were timeouts or a service error of the local model
-deployment. A separate human study found the original-failure
-explanations generally well received: 15 participants gave 540 ratings,
-of which 88.9\% were Agree or Strongly Agree. Second (RQ2), 62 of the 73
-repair attempts actually made (84.9\%) removed the specific dependency
-error they targeted, and every repair proposal the model produced was
-schema-valid and grounded in retrieved PyPI evidence. Third (RQ2 again),
-no notebook in the evaluation split re-executed cleanly within the
-two-round budget. End-to-end recovery was limited by the repair agent's
-package mapping, which resolved the failing import often enough to reach
-the model in under a third of its invocations, and by the fact that many
-evaluated notebooks exposed further dependency errors in sequence.
-Fourth (RQ3), repeating the evaluation
-with a different open model, Qwen3.6-35B-A3B-MLX-8bit, left every
-aggregate repair figure unchanged; the two models differed on 13
-notebooks in which compatible NumPy release they selected to pin, with no
-effect on any measured repair outcome. \Cref{chap:validation} reports all four
-in full.
+For RQ1, the explainer completed 180 of the 187 explanations of original
+failures and all 69 explanations of errors newly exposed after a first repair.
+A separate user study found the explanations generally well received: 15
+participants gave 540 ratings, of which 88.9\% were Agree or Strongly Agree.
+A separate blinded comparison with 15 participants rated resolver-informed
+template explanations higher than LLM explanations on all six items for four
+selected errors. Both studies are descriptive convenience samples.
+For RQ2, the pipeline recovered five notebooks from start to finish. The
+remaining records show why end-to-end recovery is difficult: some required a
+safe abstention, some could not be tested successfully in Docker, and others
+revealed further errors during execution.
+
+In a matched comparison using the same frozen PyPI release metadata, the
+notebook-adapted PLLM-style baseline recovered six notebooks and the thesis
+pipeline recovered three; two recoveries were shared. The thesis pipeline
+resolved its targeted error in 63.2\% of Docker repair attempts, compared
+with 53.1\% for the baseline. This single descriptive comparison shows
+different trade-offs, rather than an overall winner.
+
+For RQ3, the same frozen-metadata evaluation was also run with Qwen in place
+of Gemma. Qwen produced valid structured explanations for 261 of 262
+encountered errors, compared with 238 of 264 for Gemma. Both models recovered
+three notebooks. The small difference in targeted-error resolution cannot be
+attributed to model choice alone because the serving environments and two
+Docker outcomes differed between the runs.
 
 \section{Thesis Structure}
 \label{sec:intro-structure}

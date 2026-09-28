@@ -1,0 +1,17 @@
+metric,value
+primary.system_level_repair_success_rate,0.0
+primary.round1_repair_success_rate,0.0
+primary.final_repair_success_rate,0.0
+primary.additional_notebooks_fixed_by_round2,0
+primary.absolute_pp_improvement_from_round2,0.0
+secondary.conditional_repair_success_rate,
+secondary.targeted_error_resolution_rate,
+secondary.method_only_success_rate,0.0
+secondary.infrastructure_failure_rate,0.32620320855614976
+secondary.abstention_rate,0.6737967914438503
+secondary.proposal_validity_rate,0.0
+secondary.grounding_pass_rate,
+secondary.end_to_end_valid_grounded_proposal_rate,0.0
+secondary.explanation_schema_validity,"{'valid': 0, 'processed': 187, 'rate': 0.0}"
+round2_summary.eligible,0
+round2_summary.attempted,0

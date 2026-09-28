@@ -1,0 +1,13 @@
+notebook_execution_id,subtype,llm_self_reported_confidence,q6_ratings,q6_median,q6_pct_agree_or_strongly_agree
+62,missing_package,high,7,5.0,85.71428571428571
+79,missing_package,high,7,5.0,100.0
+94,missing_package,high,7,5.0,100.0
+118,missing_package,high,7,5.0,85.71428571428571
+163,wrong_version,medium,7,5.0,85.71428571428571
+172,missing_package,high,7,5.0,100.0
+175,wrong_version,medium,8,5.0,87.5
+197,wrong_version,medium,8,5.0,75.0
+211,missing_package,high,8,5.0,87.5
+252,missing_package,high,8,5.0,87.5
+282,missing_package,high,8,5.0,75.0
+398,missing_package,high,8,5.0,75.0

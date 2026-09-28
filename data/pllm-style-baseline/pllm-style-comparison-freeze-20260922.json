@@ -1,0 +1,46 @@
+{
+  "freeze_id": "pllm-style-comparison-freeze-20260922",
+  "created_at": "2026-09-22T22:07:00+02:00",
+  "status": "pre_evaluation_frozen",
+  "evaluation_processed": false,
+  "supersedes_for_comparison": "pllm-style-pre-evaluation-freeze-20260922",
+  "supersession_reason": "The earlier cache omitted deterministic evaluation-input imports absent from PLLM's module-link table; see docs/pllm_style_evaluation_deviation.md.",
+  "baseline": {
+    "name": "pllm_style_notebook_v1",
+    "kind": "notebook-adapted PLLM-style reimplementation",
+    "source_repository": "https://github.com/checkdgt/fse-aiware-python-dependencies",
+    "source_revision": "11b8e6e45cd0167070df1367e748e00bd67a9b0d",
+    "model": {
+      "provider": "Ollama",
+      "name": "gemma2:9b",
+      "artifact_digest": "ff02c3702f32",
+      "temperature": 0.1,
+      "top_p": 0.9,
+      "max_tokens": 700,
+      "timeout_seconds": 300
+    },
+    "repair_budget": 2,
+    "network_access_during_evaluation": false
+  },
+  "frozen_pypi_cache": {
+    "path": "data/pllm-style-baseline/shared-comparison-pypi-cache.json",
+    "sha256": "cbb5828cbca88263ae03287cd5aed576b3782fbab4fc46ddb75ba05a79342557",
+    "entries": 130,
+    "resolved": 115,
+    "not_found": 15
+  },
+  "integrity": {
+    "baseline_config_sha256": "4471d678f382c70d251904d0d8b5f56eaa4987cfa2a7356739b6677cb4d45548",
+    "baseline_script_sha256": "01d3153b73e69cb6d139bcf3e8fe981f3eb3c228facf0fdb035eef83413ce58e",
+    "baseline_tests_sha256": "e6464f33b0d14dfeb2bff7eea14e1c0f2d3f8e04bb3db56a23285cd69da17567",
+    "context_dataset_sha256": "fe1f0cf070c0f8b1c1cf4e9b02f76db7c8604dfd54cff496a7ca2a82300b646d",
+    "split_manifest_sha256": "890e9c83c15332a0311a22d691a661e19851adbe4ba04056042b5172aeac4ebf",
+    "pllm_module_link_sha256": "d7af9f58110e87ab21b20f79a54a1b3c5cfd2e9e6dd6cb110b057e8930f1a303",
+    "fix_applicator_config_sha256": "d02577b07824da27e37c81f5054503c0ac43c09d51ee2bb38aa0df6478724385",
+    "repository_metadata_db_sha256": "ce049a7e5853a703f12b789e4dd2ef0f9d9b6d3cc7fbd88a237c7d963623a8a6"
+  },
+  "validation": {
+    "baseline_unit_tests": "12 passed",
+    "offline_cache_preflight": "130 distributions: 115 resolved, 15 not found"
+  }
+}

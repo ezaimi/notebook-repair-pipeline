@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dependency Failure Explanation &amp; Repair Pipeline — Thesis Demo</title>
+  <script>
+    (function () {
+      try {
+        var stored = localStorage.getItem("theme");
+        var forced = new URLSearchParams(window.location.search).get("theme");
+        var theme = (forced === "light" || forced === "dark") ? forced
+          : stored || ((window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light");
+        document.documentElement.setAttribute("data-theme", theme);
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="app">
+    <nav class="sidebar">
+      <div class="brand">
+        <div class="brand-title">Dependency Failure Explanation &amp; Repair Pipeline</div>
+        <div class="brand-sub">Interactive demo</div>
+      </div>
+
+      <a class="nav-item" data-route="dashboard"><span class="nav-icon">&#9673;</span> Overview</a>
+      <a class="nav-item" data-route="notebooks"><span class="nav-icon">&#9776;</span> Notebook Failures</a>
+      <a class="nav-item" data-route="workspace"><span class="nav-icon">&#9881;</span> Repair Workspace</a>
+      <a class="nav-item" data-route="evaluation"><span class="nav-icon">&#9707;</span> Evaluation Summary</a>
+      <a class="nav-item" data-route="comparison"><span class="nav-icon">&#8644;</span> Gemma vs Qwen</a>
+      <a class="nav-item" data-route="kg"><span class="nav-icon">&#8982;</span> Knowledge Graph</a>
+      <a class="nav-item" data-route="settings"><span class="nav-icon">&#9788;</span> Settings</a>
+
+      <div class="sidebar-footer">
+        Demo mode: replays recorded pipeline runs.<br/>
+        No live LLM, Docker, or PyPI calls.<br/>
+        Main run: Gemma-2 9B (i10) &middot; sensitivity: Qwen3.6 (i11)
+      </div>
+    </nav>
+
+    <main class="main" id="main"></main>
+  </div>
+
+  <!-- real, extracted thesis data (see demo-mockup/README.md for provenance) -->
+  <script src="data/cases.js"></script>
+  <script src="data/notebook_list.js"></script>
+  <script src="data/evaluation.js"></script>
+
+  <script src="js/theme.js"></script>
+  <script src="js/format.js"></script>
+  <script src="js/dashboard.js"></script>
+  <script src="js/notebooks.js"></script>
+  <script src="js/workspace.js"></script>
+  <script src="js/evaluation.js"></script>
+  <script src="js/kg.js"></script>
+  <script src="js/settings.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

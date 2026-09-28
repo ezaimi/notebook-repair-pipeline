@@ -9,10 +9,9 @@ deliberately one shared module rather than duplicated per call site (unlike
 call_ollama, which is intentionally duplicated between
 scripts/run_llm_explainer.py and scripts/rag_repair_agent.py) so there is a
 single, auditable function to verify never logs, prints, returns, or
-persists the token. call_kiste() never reads .env itself - it only reads
-the already-exported process environment variable, exactly like every
-other secret in this project (see scripts/evaluation_manifest.py's own
-"never reads .env" contract).
+persists the token. If the variable is not already exported, it safely loads
+the repository's local .env file with python-dotenv. The evaluation manifest
+still never reads .env or records its contents.
 
 call_kiste() returns the same (raw_response: str, metadata: dict) shape
 scripts/run_llm_explainer.py's and scripts/rag_repair_agent.py's own
@@ -24,6 +23,7 @@ rendered prompt string is sent unmodified as a single user message.
 """
 
 import os
+from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 
@@ -39,16 +39,24 @@ class KisteConfigurationError(Exception):
 # across a whole 187-record run; caching it just avoids rebuilding the
 # client object once per record.
 _CLIENT_CACHE: Dict[str, Any] = {}
+ROOT = Path(__file__).resolve().parent.parent
 
 
 def _get_api_token() -> str:
     token = os.environ.get("KISTE_API_TOKEN")
     if not token:
+        try:
+            from dotenv import load_dotenv
+        except ImportError as e:
+            raise KisteConfigurationError(
+                "KISTE_API_TOKEN is not exported and python-dotenv is unavailable "
+                "to load the repository .env file"
+            ) from e
+        load_dotenv(ROOT / ".env", override=False)
+        token = os.environ.get("KISTE_API_TOKEN")
+    if not token:
         raise KisteConfigurationError(
-            "KISTE_API_TOKEN is not set in the environment. Export it before "
-            "running a provider: kiste evaluation; this module never reads "
-            ".env itself, so sourcing a .env file (if you use one) is the "
-            "caller's responsibility, not this module's."
+            "KISTE_API_TOKEN is not set in the environment or repository .env file."
         )
     return token
 

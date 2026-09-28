@@ -1,0 +1,10 @@
+# Only genuine import-to-distribution mismatches belong here.  V2 tries an
+# identity/PEP-503 project lookup for ordinary imports and then proves the
+# import from wheel metadata, so names such as numpy, pandas, and scipy do not
+# need entries in this table.
+sklearn: scikit-learn
+umap: umap-learn
+pkg_resources: setuptools
+Bio: biopython
+cv2: opencv-python
+skimage: scikit-image

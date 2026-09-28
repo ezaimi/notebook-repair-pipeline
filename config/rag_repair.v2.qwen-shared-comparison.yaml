@@ -1,0 +1,55 @@
+# Qwen counterpart of rag_repair.v2.shared-comparison.yaml.
+# The frozen PyPI and wheel-import evidence must remain byte-identical to the
+# completed Gemma V2 comparison run. Only the LLM provider/model settings and
+# this run's proposal-output path differ.
+runtime:
+  python_version: "3.10"
+
+pypi_client:
+  frozen_cache_path: "data/pllm-style-baseline/shared-comparison-pypi-cache.json"
+  allow_network: false
+  rate_limit:
+    min_request_interval_seconds: 0
+    max_retries_on_429: 0
+    max_retry_after_seconds: 0
+
+resolver:
+  mode: v2
+  package_mapping_path: "config/package_mapping.v2.yaml"
+  public_mapping_path: "data/public-import-mapping/pipreqs-mapping.txt"
+  public_mapping_provenance_path: "data/public-import-mapping/pipreqs-mapping-provenance.json"
+  wheel_import_index_path: "data/pllm-style-baseline/v2-shared-comparison-wheel-import-index.json"
+  import_provision_evidence: "frozen_wheel_metadata"
+  wrong_version_policy: "repository_date_anchored"
+
+repair_agent:
+  provider: "kiste"
+  # These are stable policy identifiers used by the V2 code. Their names do
+  # not select the provider; the provider is the `kiste` value above.
+  decision_policy:
+    missing_package: "deterministic_verified_install"
+    wrong_version_single_candidate: "deterministic_verified_pin"
+    wrong_version_multiple_candidates: "ollama_select_from_verified_candidates"
+    unresolved_import: "ollama_propose_then_verify"
+  kiste:
+    base_url: "https://kiste.informatik.tu-chemnitz.de/v1"
+    model: "Qwen3.6-35B-A3B-MLX-8bit"
+    temperature: 0.1
+    top_p: 0.9
+    # Calibrated development-only value; see llm_explainer.v2.qwen.yaml.
+    max_tokens: 4096
+    timeout_seconds: 300
+  prompt:
+    template: "dependency_repair_v2"
+    version: "v2_requirement_context"
+  retry:
+    max_retries: 1
+    retry_on:
+      - invalid_json
+      - schema_validation_error
+      - grounding_validation_error
+      - timeout
+      - model_unavailable
+  output:
+    path: "data/repair-proposals-v2-qwen-shared-comparison/repair_proposals.jsonl"
+    schema: "schemas/repair_proposal.schema.json"

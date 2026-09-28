@@ -1,0 +1,4 @@
+llm_self_reported_confidence,subtypes_in_pool,unique_explanations,q6_ratings,q6_median,q6_pct_agree_or_strongly_agree
+high,missing_package,9,67,5.0,88.05970149253731
+medium,wrong_version,3,23,5.0,82.6086956521739
+low,none,0,0,,

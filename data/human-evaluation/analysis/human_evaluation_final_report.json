@@ -1,0 +1,492 @@
+{
+  "background": {
+    "n_participants": 15,
+    "questions": {
+      "dependency_error_familiarity": {
+        "counts": {
+          "Frequently": 4,
+          "Occasionally": 11
+        },
+        "percentages": {
+          "Frequently": 26.7,
+          "Occasionally": 73.3
+        }
+      },
+      "jupyter_familiarity": {
+        "counts": {
+          "Never used them": 3,
+          "Use them regularly": 1,
+          "Used them a few times": 11
+        },
+        "percentages": {
+          "Never used them": 20.0,
+          "Use them regularly": 6.7,
+          "Used them a few times": 73.3
+        }
+      },
+      "prog_experience": {
+        "counts": {
+          "Advanced/Professional": 4,
+          "Beginner": 1,
+          "Intermediate": 10
+        },
+        "percentages": {
+          "Advanced/Professional": 26.7,
+          "Beginner": 6.7,
+          "Intermediate": 66.7
+        }
+      },
+      "python_familiarity": {
+        "counts": {
+          "Never used it": 1,
+          "Use it regularly": 7,
+          "Used it a little": 7
+        },
+        "percentages": {
+          "Never used it": 6.7,
+          "Use it regularly": 46.7,
+          "Used it a little": 46.7
+        }
+      }
+    }
+  },
+  "by_subtype": {
+    "missing_package": {
+      "q1_understanding": {
+        "distribution": {
+          "1": 0,
+          "2": 4,
+          "3": 1,
+          "4": 23,
+          "5": 39
+        },
+        "iqr": 1.0,
+        "median": 5,
+        "n": 67,
+        "pct_agree_or_strongly_agree": 92.53731343283582
+      },
+      "q2_satisfaction": {
+        "distribution": {
+          "1": 0,
+          "2": 4,
+          "3": 6,
+          "4": 30,
+          "5": 27
+        },
+        "iqr": 1.0,
+        "median": 4,
+        "n": 67,
+        "pct_agree_or_strongly_agree": 85.07462686567165
+      },
+      "q3_detail": {
+        "distribution": {
+          "1": 3,
+          "2": 1,
+          "3": 2,
+          "4": 24,
+          "5": 37
+        },
+        "iqr": 1.0,
+        "median": 5,
+        "n": 67,
+        "pct_agree_or_strongly_agree": 91.04477611940298
+      },
+      "q4_completeness": {
+        "distribution": {
+          "1": 3,
+          "2": 1,
+          "3": 2,
+          "4": 28,
+          "5": 33
+        },
+        "iqr": 1.0,
+        "median": 4,
+        "n": 67,
+        "pct_agree_or_strongly_agree": 91.04477611940298
+      },
+      "q5_usefulness": {
+        "distribution": {
+          "1": 3,
+          "2": 1,
+          "3": 3,
+          "4": 20,
+          "5": 40
+        },
+        "iqr": 1.0,
+        "median": 5,
+        "n": 67,
+        "pct_agree_or_strongly_agree": 89.55223880597015
+      },
+      "q6_perceived_correctness": {
+        "distribution": {
+          "1": 3,
+          "2": 2,
+          "3": 3,
+          "4": 14,
+          "5": 45
+        },
+        "iqr": 1.0,
+        "median": 5,
+        "n": 67,
+        "pct_agree_or_strongly_agree": 88.05970149253731
+      }
+    },
+    "wrong_version": {
+      "q1_understanding": {
+        "distribution": {
+          "1": 0,
+          "2": 2,
+          "3": 0,
+          "4": 7,
+          "5": 14
+        },
+        "iqr": 1.0,
+        "median": 5,
+        "n": 23,
+        "pct_agree_or_strongly_agree": 91.30434782608695
+      },
+      "q2_satisfaction": {
+        "distribution": {
+          "1": 0,
+          "2": 2,
+          "3": 2,
+          "4": 9,
+          "5": 10
+        },
+        "iqr": 1.0,
+        "median": 4,
+        "n": 23,
+        "pct_agree_or_strongly_agree": 82.6086956521739
+      },
+      "q3_detail": {
+        "distribution": {
+          "1": 2,
+          "2": 0,
+          "3": 0,
+          "4": 10,
+          "5": 11
+        },
+        "iqr": 1.0,
+        "median": 4,
+        "n": 23,
+        "pct_agree_or_strongly_agree": 91.30434782608695
+      },
+      "q4_completeness": {
+        "distribution": {
+          "1": 2,
+          "2": 0,
+          "3": 0,
+          "4": 11,
+          "5": 10
+        },
+        "iqr": 1.0,
+        "median": 4,
+        "n": 23,
+        "pct_agree_or_strongly_agree": 91.30434782608695
+      },
+      "q5_usefulness": {
+        "distribution": {
+          "1": 2,
+          "2": 0,
+          "3": 2,
+          "4": 6,
+          "5": 13
+        },
+        "iqr": 1.0,
+        "median": 5,
+        "n": 23,
+        "pct_agree_or_strongly_agree": 82.6086956521739
+      },
+      "q6_perceived_correctness": {
+        "distribution": {
+          "1": 2,
+          "2": 0,
+          "3": 2,
+          "4": 3,
+          "5": 16
+        },
+        "iqr": 1.0,
+        "median": 5,
+        "n": 23,
+        "pct_agree_or_strongly_agree": 82.6086956521739
+      }
+    }
+  },
+  "composite_score": null,
+  "n_complete_participants": 15,
+  "n_explanation_evaluations": 90,
+  "n_likert_ratings": 540,
+  "note_on_subtype_comparison": "The example pool contains 9 distinct missing_package cases but only 3 distinct wrong_version cases (the eligible wrong_version population had only 3 genuinely distinct error signatures - see docs/human-explanation-evaluation-questionnaire.md Appendix C). Any by-subtype comparison above is descriptive only and must not be read as comparing two equally diverse samples.",
+  "overall_by_item": {
+    "q1_understanding": {
+      "distribution": {
+        "1": 0,
+        "2": 6,
+        "3": 1,
+        "4": 30,
+        "5": 53
+      },
+      "iqr": 1.0,
+      "median": 5.0,
+      "n": 90,
+      "pct_agree_or_strongly_agree": 92.22222222222223
+    },
+    "q2_satisfaction": {
+      "distribution": {
+        "1": 0,
+        "2": 6,
+        "3": 8,
+        "4": 39,
+        "5": 37
+      },
+      "iqr": 1.0,
+      "median": 4.0,
+      "n": 90,
+      "pct_agree_or_strongly_agree": 84.44444444444444
+    },
+    "q3_detail": {
+      "distribution": {
+        "1": 5,
+        "2": 1,
+        "3": 2,
+        "4": 34,
+        "5": 48
+      },
+      "iqr": 1.0,
+      "median": 5.0,
+      "n": 90,
+      "pct_agree_or_strongly_agree": 91.11111111111111
+    },
+    "q4_completeness": {
+      "distribution": {
+        "1": 5,
+        "2": 1,
+        "3": 2,
+        "4": 39,
+        "5": 43
+      },
+      "iqr": 1.0,
+      "median": 4.0,
+      "n": 90,
+      "pct_agree_or_strongly_agree": 91.11111111111111
+    },
+    "q5_usefulness": {
+      "distribution": {
+        "1": 5,
+        "2": 1,
+        "3": 5,
+        "4": 26,
+        "5": 53
+      },
+      "iqr": 1.0,
+      "median": 5.0,
+      "n": 90,
+      "pct_agree_or_strongly_agree": 87.77777777777777
+    },
+    "q6_perceived_correctness": {
+      "distribution": {
+        "1": 5,
+        "2": 2,
+        "3": 5,
+        "4": 17,
+        "5": 61
+      },
+      "iqr": 1.0,
+      "median": 5.0,
+      "n": 90,
+      "pct_agree_or_strongly_agree": 86.66666666666667
+    }
+  },
+  "overall_pooled": {
+    "distribution": {
+      "1": 20,
+      "2": 17,
+      "3": 23,
+      "4": 185,
+      "5": 295
+    },
+    "iqr": 1.0,
+    "median": 5.0,
+    "n": 540,
+    "pct_agree_or_strongly_agree": 88.88888888888889
+  },
+  "per_notebook": {
+    "118": {
+      "median_all_items": 5.0,
+      "n_participants": 7,
+      "n_ratings": 42,
+      "pct_agree_or_strongly_agree": 78.57142857142857,
+      "subtype": "missing_package"
+    },
+    "163": {
+      "median_all_items": 5.0,
+      "n_participants": 7,
+      "n_ratings": 42,
+      "pct_agree_or_strongly_agree": 85.71428571428571,
+      "subtype": "wrong_version"
+    },
+    "172": {
+      "median_all_items": 5.0,
+      "n_participants": 7,
+      "n_ratings": 42,
+      "pct_agree_or_strongly_agree": 92.85714285714286,
+      "subtype": "missing_package"
+    },
+    "175": {
+      "median_all_items": 5.0,
+      "n_participants": 8,
+      "n_ratings": 48,
+      "pct_agree_or_strongly_agree": 93.75,
+      "subtype": "wrong_version"
+    },
+    "197": {
+      "median_all_items": 5.0,
+      "n_participants": 8,
+      "n_ratings": 48,
+      "pct_agree_or_strongly_agree": 81.25,
+      "subtype": "wrong_version"
+    },
+    "211": {
+      "median_all_items": 5.0,
+      "n_participants": 8,
+      "n_ratings": 48,
+      "pct_agree_or_strongly_agree": 87.5,
+      "subtype": "missing_package"
+    },
+    "252": {
+      "median_all_items": 5.0,
+      "n_participants": 8,
+      "n_ratings": 48,
+      "pct_agree_or_strongly_agree": 93.75,
+      "subtype": "missing_package"
+    },
+    "282": {
+      "median_all_items": 5.0,
+      "n_participants": 8,
+      "n_ratings": 48,
+      "pct_agree_or_strongly_agree": 81.25,
+      "subtype": "missing_package"
+    },
+    "398": {
+      "median_all_items": 5.0,
+      "n_participants": 8,
+      "n_ratings": 48,
+      "pct_agree_or_strongly_agree": 81.25,
+      "subtype": "missing_package"
+    },
+    "62": {
+      "median_all_items": 5.0,
+      "n_participants": 7,
+      "n_ratings": 42,
+      "pct_agree_or_strongly_agree": 92.85714285714286,
+      "subtype": "missing_package"
+    },
+    "79": {
+      "median_all_items": 5.0,
+      "n_participants": 7,
+      "n_ratings": 42,
+      "pct_agree_or_strongly_agree": 100.0,
+      "subtype": "missing_package"
+    },
+    "94": {
+      "median_all_items": 5.0,
+      "n_participants": 7,
+      "n_ratings": 42,
+      "pct_agree_or_strongly_agree": 100.0,
+      "subtype": "missing_package"
+    }
+  },
+  "qualitative": {
+    "comments": [
+      {
+        "field": "open_feedback_1",
+        "participant_id": "P04",
+        "text": "Some explanations repeated the error message and could have explained the cause a little more."
+      },
+      {
+        "field": "open_feedback_2",
+        "participant_id": "P04",
+        "text": "It would be more helpful if the explanations gave a little more context about the likely cause instead of mainly restating the error. Including specific details, such as the correct package name or what kind of version incompatibility might be involved, would make them more informative."
+      },
+      {
+        "field": "open_feedback_2",
+        "participant_id": "P07",
+        "text": "more detailed explanation about the error message"
+      },
+      {
+        "field": "open_feedback_2",
+        "participant_id": "P09",
+        "text": "Yes"
+      },
+      {
+        "field": "open_feedback_2",
+        "participant_id": "P12",
+        "text": "They were very helpful and also provide enough information on understanding exactly what is working wrong"
+      },
+      {
+        "field": "open_feedback_1",
+        "participant_id": "P14",
+        "text": "Nothing. Everything is clear"
+      }
+    ],
+    "n_non_empty_comments": 6,
+    "n_participants_with_any_comment": 5,
+    "theme_counts": {
+      "clear_or_useful": {
+        "n_comments": 3,
+        "n_participants": 3
+      },
+      "repeats_error_without_cause": {
+        "n_comments": 2,
+        "n_participants": 1
+      },
+      "wants_more_detail": {
+        "n_comments": 2,
+        "n_participants": 2
+      },
+      "wants_package_or_version_info": {
+        "n_comments": 1,
+        "n_participants": 1
+      }
+    }
+  },
+  "reconciliation": {
+    "complete_participants_times_6": 90,
+    "explanation_evaluations_match": true,
+    "likert_ratings_match": true,
+    "n_explanation_evaluations": 90,
+    "n_explanation_evaluations_times_6": 540,
+    "total_likert_ratings": 540
+  },
+  "reliability": {
+    "cronbachs_alpha": 0.9281433772052647,
+    "note": "Supplementary internal-consistency statistic only - not an inter-rater agreement measure, not proof the six items form one construct, and not a validity check on the study itself. See this module's cronbachs_alpha() docstring."
+  },
+  "verification": {
+    "per_variant": {
+      "A": {
+        "complete_responses": 3,
+        "excluded_responses": 0,
+        "raw_responses": 3
+      },
+      "B": {
+        "complete_responses": 4,
+        "excluded_responses": 1,
+        "raw_responses": 5
+      },
+      "C": {
+        "complete_responses": 4,
+        "excluded_responses": 0,
+        "raw_responses": 4
+      },
+      "D": {
+        "complete_responses": 4,
+        "excluded_responses": 2,
+        "raw_responses": 6
+      }
+    },
+    "total_complete_participants": 15,
+    "total_excluded_responses": 3,
+    "total_raw_responses": 18
+  }
+}

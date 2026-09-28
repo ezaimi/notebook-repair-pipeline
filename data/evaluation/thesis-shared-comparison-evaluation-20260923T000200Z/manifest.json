@@ -1,0 +1,55 @@
+{
+  "code_hashes": {
+    "evaluation_metrics": "e531f6511fcbee3ef589ae9c6ae1fcdeccaaabdb6320440302bb252abe20ce08",
+    "fix_applicator": "ec9cd20e883c3582f4a8bb154abcfbf4e07b987e59b6c4c6f48830ff9e9017f9",
+    "pypi_retriever": "3a8fa66417c0da0f20e9761ad45c13a5c77a93b13485596d17028224396ee61f",
+    "rag_repair_agent": "2b0033cd0b5a9128bce18d86001004c8df7d7d272e6bf3307a2385aec6a2223d",
+    "result_logger": "0000fbbad03b4050731731a2edb8a1f904f8190a28dca214f2565c286fbbfa3c",
+    "run_llm_explainer": "ac4cc932472b5da31413832fac840219b10fc9dcd07b3e6a9508a522f75aac59",
+    "run_pipeline": "921e724b2751e64be4151796beb960f1272a778b5f3fb928063ea3eb29cdda47"
+  },
+  "config_hashes": {
+    "fix_applicator_config": "fcb5faf4a5fbf10b15f7e34e9e81b0bb6832e8391ae1b1232ee18f3a44e9a436",
+    "llm_explainer_config": "ae3170258456f017f3ea8254b3a5ea570583c82dae2cc1de0d74b2d39dbdac7d",
+    "package_mapping": "e2231d9855b77f5b200597c6814f7d719be5fb73302d79e058e6a8f281e17562",
+    "prompts_dir": "76b232f04827ebc35d1cadd7e3cb2821cf9d8c30a10473885c65db3a218b86e4",
+    "rag_repair_config": "db7b47027d056bf7d214b8d3bfb071e95000c3b17cfb9826368c1c4694e7cda0"
+  },
+  "config_paths": {
+    "explainer_config": "config/llm_explainer.yaml",
+    "fix_config": "config/fix_applicator.evaluation.wsl.yaml",
+    "repair_config": "config/rag_repair.comparison.yaml"
+  },
+  "created_at": "2026-09-23T13:07:07.126158+00:00",
+  "database_path": "/home/zaimi/era/ma-erisa-zaimi/data/evaluation/thesis-shared-comparison-evaluation-20260923T000200Z/raw/repair_attempts.sqlite",
+  "evidence_hashes": {
+    "frozen_pypi_cache": {
+      "allow_network": false,
+      "path": "data/pllm-style-baseline/shared-comparison-pypi-cache.json",
+      "sha256": "e98b0ef696e48c910dccbd9153a448e8e37863fca83f9a5780cdeaff53a63538"
+    }
+  },
+  "expected_record_count": 187,
+  "explanation_prompt_version": "i3_prompt_v1",
+  "git_commit_sha": "0e5c621787a9a815ac4c36958db48eabd3c47ee7",
+  "git_working_tree_dirty": true,
+  "i2_path": "data/context-classification/dependency_error_contexts.jsonl",
+  "max_rounds": 2,
+  "model": "gemma2:9b",
+  "orchestrator_features": {
+    "round2_explanation": true
+  },
+  "output_dir": "/home/zaimi/era/ma-erisa-zaimi/data/evaluation/thesis-shared-comparison-evaluation-20260923T000200Z/raw/pipeline-runs",
+  "prompt_strategy": "few_shot",
+  "python_version": "3.14.4",
+  "repair_prompt_version": "i4_prompt_v1",
+  "repository_metadata_db": {
+    "accessible": true,
+    "configured_path": "/mnt/c/Users/zaimi/i8-eval-local-cache/upstream_pmc_docker_db.sqlite",
+    "reason": null,
+    "resolved_path": "/mnt/c/Users/zaimi/i8-eval-local-cache/upstream_pmc_docker_db.sqlite",
+    "sha256": "ce049a7e5853a703f12b789e4dd2ef0f9d9b6d3cc7fbd88a237c7d963623a8a6"
+  },
+  "run_id": "thesis-shared-comparison-evaluation-20260923T000200Z",
+  "split": "evaluation"
+}

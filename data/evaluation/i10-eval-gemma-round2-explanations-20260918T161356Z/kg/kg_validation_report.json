@@ -1,0 +1,181 @@
+{
+  "inputs": {
+    "db_path": "data/repair_attempts.sqlite.validation-copy",
+    "db_sha256": "a4f0416b78214db9ad30ba25a51d2f9870fd9235e9360d0ec7ef3733ebb9174f",
+    "csv_path": "final/repair_attempts.csv",
+    "csv_sha256": "97e32e300b9325b0e8ababf64d3dcec34a6069739da24c0e8f8648d492c8f1bf",
+    "rdf_path": "final/repair_attempts.nt",
+    "rdf_sha256": "3775fdbc766d4933bb879e8c331b30ec83f81e36c3e3d9eebc640c7807c9ce18",
+    "notebooks_rdf_path": "out/notebooks.nt",
+    "notebooks_rdf_sha256": "cc77a976231ed89ebcad42dfa04ac7e297727f04771130272995caf73aca703c",
+    "notebooks_csv_path": "data/notebooks.csv",
+    "notebooks_csv_sha256": "18858c2a5a8998dc0450cdbb11a192b0376d2a8c29de1a3f495435c4b4ca036b",
+    "mapping_path": "mapping/rml_mapping/repair_attempts.rml.ttl",
+    "mapping_sha256": "eb0d32fd4470d5c1e2c548bf1dadedecda4e68b4379077a3df99fd1aa069dc16"
+  },
+  "tools": {
+    "python": "3.13.7",
+    "rdflib": "7.2.1",
+    "morph_kgc": "2.10.0"
+  },
+  "summary": {
+    "sqlite_rows": 235,
+    "sqlite_round1_rows": 187,
+    "sqlite_round2_rows": 48,
+    "csv_rows": 235,
+    "triples": 3478,
+    "repair_attempt_resources": 235,
+    "notebook_to_repair_links": 235,
+    "distinct_linked_notebooks": 187,
+    "round1_resources": 187,
+    "round2_resources": 48,
+    "upstream_notebooks_triples": 627127,
+    "upstream_repr_Notebook_resources": 27271,
+    "union_triples": 630605,
+    "predicate_counts": {
+      "prov:endedAtTime": 235,
+      "rdf:type": 470,
+      "repr:exception": 70,
+      "repr:explanation": 208,
+      "repr:failingModule": 235,
+      "repr:fixAction": 235,
+      "repr:fixCommand": 73,
+      "repr:fixOutcome": 73,
+      "repr:fixRationale": 73,
+      "repr:fixVersion": 18,
+      "repr:hadRepairAttempt": 235,
+      "repr:installName": 73,
+      "repr:llmModel": 235,
+      "repr:msg": 70,
+      "repr:promptStrategy": 235,
+      "repr:pypiEvidence": 235,
+      "repr:round": 235,
+      "repr:runId": 235,
+      "repr:subtype": 235
+    },
+    "checks_passed": 24,
+    "checks_total": 24
+  },
+  "checks": [
+    {
+      "name": "rdf_parses_as_ntriples",
+      "passed": true,
+      "detail": "3478 triples"
+    },
+    {
+      "name": "rdf_parses_as_turtle_with_same_triple_count",
+      "passed": true,
+      "detail": "3478 triples"
+    },
+    {
+      "name": "no_duplicate_triples_in_file",
+      "passed": true,
+      "detail": "file lines=3478 graph=3478"
+    },
+    {
+      "name": "csv_row_ids_equal_sqlite_row_ids",
+      "passed": true,
+      "detail": "csv=235 sqlite=235"
+    },
+    {
+      "name": "one_repair_attempt_resource_per_sqlite_row",
+      "passed": true,
+      "detail": "235 resources / 235 rows"
+    },
+    {
+      "name": "every_repair_attempt_typed_repr_RepairAttempt_and_prov_Activity",
+      "passed": true,
+      "detail": "prov:Activity=235"
+    },
+    {
+      "name": "no_duplicate_repair_attempt_iris",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "only_other_subjects_are_notebook_iris",
+      "passed": true,
+      "detail": "187 notebook subjects"
+    },
+    {
+      "name": "every_repair_attempt_linked_from_exactly_its_own_notebook",
+      "passed": true,
+      "detail": "235 links, 187 distinct notebooks; bad=[]"
+    },
+    {
+      "name": "every_link_object_is_a_typed_repair_attempt",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "linked_notebook_iris_exist_as_repr_Notebook_in_upstream_notebooks_mapping_output",
+      "passed": true,
+      "detail": "187 linked / 27271 upstream repr:Notebook (627127 triples); missing=[]"
+    },
+    {
+      "name": "linked_notebooks_carry_pav_retrievedFrom_in_upstream_output",
+      "passed": true,
+      "detail": "187/187"
+    },
+    {
+      "name": "linked_notebook_ids_present_in_upstream_notebooks_csv",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "every_literal_equals_its_sqlite_value",
+      "passed": true,
+      "detail": "mismatches=[]"
+    },
+    {
+      "name": "null_columns_produce_no_triple_and_no_empty_string_literal",
+      "passed": true,
+      "detail": "empty literals=0"
+    },
+    {
+      "name": "no_unexpected_predicates_on_repair_attempts",
+      "passed": true,
+      "detail": "[]"
+    },
+    {
+      "name": "prov_endedAtTime_typed_xsd_dateTime_and_parseable_on_every_row",
+      "passed": true,
+      "detail": "bad=[]"
+    },
+    {
+      "name": "per_predicate_triple_count_equals_sqlite_non_null_count",
+      "passed": true,
+      "detail": "{}"
+    },
+    {
+      "name": "post_repair_error_predicates_only_where_values_exist",
+      "passed": true,
+      "detail": "70 resources"
+    },
+    {
+      "name": "fixOutcome_only_on_rows_with_recorded_outcome",
+      "passed": true,
+      "detail": "73 resources"
+    },
+    {
+      "name": "round_literal_partitions_resources_into_round1_and_round2",
+      "passed": true,
+      "detail": "round1=187 round2=48"
+    },
+    {
+      "name": "every_round2_notebook_also_has_a_round1_resource",
+      "passed": true,
+      "detail": "48 round-2 notebooks"
+    },
+    {
+      "name": "single_run_id_model_and_prompt_strategy",
+      "passed": true,
+      "detail": "['i10-eval-gemma-round2-explanations-20260918T161356Z'] ['gemma2:9b'] ['few_shot']"
+    },
+    {
+      "name": "sparql_over_union_reaches_every_repair_attempt_from_a_typed_notebook",
+      "passed": true,
+      "detail": "union=630605 triples; notebooks=187 attempts=235"
+    }
+  ]
+}

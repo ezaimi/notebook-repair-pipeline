@@ -1,0 +1,6 @@
+{
+  "completed_records": 187,
+  "expected_records": 187,
+  "status": "passed",
+  "trace_path": "data\\evaluation\\pllm-style-shared-comparison-evaluation-20260923T000100Z\\raw\\pllm_style_traces.jsonl"
+}

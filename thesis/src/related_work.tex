@@ -1,13 +1,13 @@
 \chapter{Background and Related Work}
 \label{chap:related-work}
 
-This chapter reviews the work this thesis builds on and positions its
-contribution against it. It covers four areas: measuring notebook
-reproducibility, restoring it automatically, using large language models
-(LLMs) for dependency resolution and program repair, and the FAIR data
-principles that motivate recording repair outcomes in a knowledge graph. The
-chapter closes by stating, precisely, the gap none of this prior work closes
-on its own.
+This chapter reviews the prior work relevant to this thesis and positions the
+thesis contribution in relation to it. It covers four areas: measuring notebook
+reproducibility, automatically restoring executability, using large language
+models (LLMs) for dependency resolution and program repair, and applying FAIR
+data principles to record repair outcomes in a knowledge graph. The chapter
+then identifies the gap that remains when these approaches are considered
+together.
 
 \section{Reproducibility of Computational Notebooks}
 \label{sec:rw-reproducibility}
@@ -24,13 +24,25 @@ A large-scale study by Pimentel et al.~\cite{pimentel2019msr} measured
 this directly. Out of 1.4~million notebooks collected from GitHub, only 24.11\% of
 the notebooks they attempted ran without an error, and only 4.03\% produced
 results matching those already stored in the notebook. Samuel and
-Mietchen~\cite{samuel2024gigascience} repeated this measurement for
-notebooks linked from biomedical publications on PubMed Central and found
-the same low reproducibility rate in that domain. This is the dataset this
-thesis' own working data is derived from, described in
-\Cref{chap:problem-dataset}. Both studies agree on the dominant cause: most
-failures are not bugs in the analysis logic, but missing or incompatible
-software dependencies.
+Mietchen~\cite{samuel2024gigascience} studied notebooks linked from
+biomedical publications on PubMed Central. Of the 10,388 notebooks whose
+dependencies could be installed and which were re-executed, 1,203 (11.6\%)
+ran without an error. Of these, 879 notebooks (8.5\% of all re-executed
+notebooks) produced results identical to those stored in the original
+notebook. The working dataset used in this thesis is described separately in
+\Cref{chap:problem-dataset}. It is a smaller residual dataset produced by the
+newer Docker-based FAIR Jupyter pipeline.
+
+The dependency focus of this thesis follows the detailed error analysis in
+that FAIR Jupyter study. It recorded 6,588 \texttt{ModuleNotFoundError} and
+\texttt{ImportError} exceptions among the re-execution attempts. The
+local snapshot reported in \Cref{sec:pd-l1} has a slightly different count
+because it applies a different counting rule: it excludes skipped and
+environment-installation failures before counting dependency exceptions. The
+two figures must therefore not be compared as if they used the same
+denominator. Together, they motivate the focus on missing and incompatible
+Python dependencies, without implying that every notebook failure has the
+same cause.
 
 Detecting these failures is itself useful. Samuel and
 K{\"o}nig-Ries~\cite{samuel2020reproducemegit} built ReproduceMeGit, a
@@ -46,6 +58,35 @@ anything.
 
 A separate line of work tries to go one step further and automatically
 restore a broken environment rather than only reporting that it is broken.
+
+\subsection{Environment Capture and Large-Scale Re-execution}
+
+Several established tools aim to preserve or reconstruct the software
+environment needed to run research code. repo2docker~\cite{forde2018repo2docker}
+reads the configuration files in a repository and builds a container image.
+Binder~\cite{jupyter2018binder} uses such an image to let people run the
+repository interactively in a web browser.
+
+Other tools capture an environment that has already worked. ReproZip~\cite{rampin2016reprozip}
+observes a program on the author's machine and packages the files, software,
+and dependencies used during that run. Code Ocean~\cite{cheifet2021codeocean}
+packages code, data, and dependencies together in an executable capsule.
+In short, these tools try to make a known environment available again.
+
+The repair pipeline in this thesis starts at a later point. A notebook has
+already been run in a reconstructed environment, but it still stops with a
+dependency error. The pipeline uses the recorded error and package information
+to derive a focused repair, such as installing a missing package, or to abstain
+when the available evidence is insufficient. It then re-executes the complete
+notebook to check whether an approved repair helped.
+
+Trisovic et al.~\cite{trisovic2022execution} are a close methodological
+comparison. They re-executed R research code at scale in controlled Docker
+environments and recorded whether each run succeeded, failed with an error,
+or exceeded a time limit. They also measured the effect of basic automatic
+code cleaning. Their study measures and classifies execution outcomes. This
+thesis instead evaluates repairs for a defined subset of Python notebook
+dependency failures.
 
 \subsection{Static Analysis and Knowledge Graphs}
 
@@ -81,36 +122,85 @@ appear, and a package or release that has not yet been indexed is
 unavailable to it until the graph is rebuilt. This limitation motivates
 replacing a fixed package-and-version snapshot with a live query against
 the package registry itself, which is the design this thesis adopts
-(\Cref{chap:architecture}).
+(\Cref{chap:architecture}). The primary pipeline queries live PyPI package
+information. A frozen PyPI evidence snapshot is used only for the matched
+comparison with the PLLM-style baseline, so that both methods receive the
+same package information.
+
+\subsection{Open LLMs in the Repair Pipeline}
+\label{sec:rw-llm-primer}
+
+An LLM generates text from the context supplied to it. In this thesis, that
+context contains dependency-repair information, such as an error message, a
+failing import name, and available package evidence. The LLM does not run
+commands or decide whether a repair succeeded; Docker re-execution makes that
+decision.
+
+An open-weight model makes its parameters available for local deployment,
+subject to its licence. In contrast, a proprietary model is normally used
+through a provider's external API and its parameters are not available to the
+user. This thesis uses an open-weight model through Ollama, a local serving
+runtime. The selected model and its hardware configuration are described in
+\Cref{chap:methodology}.
+
+Error messages alone can be difficult for readers to interpret
+\cite{becker2019errormessages}. LLM-enhanced explanations have been studied as
+one way to make such messages more interpretable and actionable
+\cite{leinonen2023errormessages}; this thesis applies that idea to dependency
+failures and keeps the explanation separate from the evidence-based repair
+decision.
+
+LLM output is not automatically reliable. A model can produce invalid JSON,
+suggest a package that does not exist, or choose an unsuitable version. The
+repair component therefore uses retrieval-augmented generation (RAG): it
+restricts the model to information that can be checked against package
+evidence. When the model chooses a version, it can choose only from an
+already verified list of candidates. When it proposes a package for an import
+that deterministic sources could not map, the proposed package must first be
+verified against PyPI and wheel-import evidence. Otherwise, the pipeline
+abstains.
+
+Within this pipeline, the LLM has three roles. It explains a dependency error
+in plain language, may propose one distribution name for a previously unmapped
+import, and may choose between several verified version candidates. It never
+installs a package directly. The retrieval, verification, and validation
+procedure is described in \Cref{sec:m-repair-retrieval}.
 
 \subsection{LLMs for Dependency Resolution}
 \label{sec:rw-llm-dep}
 
-Bartlett et al.'s PLLM~\cite{bartlett2025pllm} is the closest prior
-system to this thesis and its main point of comparison. PLLM uses an
-LLM, retrieval-augmented with live PyPI data, to resolve missing or
-incompatible Python dependencies from execution feedback. In their
-experiments, an LLM using retrieval-augmented generation (RAG) against
-live package data outperformed the strongest knowledge-graph baselines
-by a wide margin (+15.97\% fixes over ReadPyE, +21.58\% over PyEGo).
-Results were especially strong on notebooks that depend on
-machine-learning libraries -- relevant here, since the dataset in
-\Cref{chap:problem-dataset} is dominated by exactly such packages
-(\texttt{scikit-learn}, \texttt{scipy}, \texttt{tensorflow}). Gao et
-al.'s RAG survey~\cite{gao2024ragsurvey} and Tao et al.'s survey of
-retrieval-augmented code generation~\cite{tao2025racg} both confirm
-that grounding a generative model's output in retrieved, verifiable
-facts, rather than the model's own memorised knowledge, is established
-practice for exactly this kind of task. This is the basis for Lewis et
-al.'s original formulation of retrieval-augmented
-generation~\cite{lewis2020rag}.
+Bartlett et al.'s PLLM~\cite{bartlett2025pllm} is the closest prior system
+to this thesis and its main point of comparison. PLLM uses an LLM,
+retrieval-augmented with live PyPI data, to resolve missing or incompatible
+Python dependencies from execution feedback. Its published implementation
+accepts a standalone Python file and constructs its own execution image. In
+contrast, the separate repair pipeline developed in this thesis starts from
+failures recorded for Jupyter notebooks and reconstructs a repository-specific
+Docker environment. Both approaches use package information and execution
+feedback to assess proposed dependency repairs. A direct execution of PLLM
+would therefore not provide a like-for-like notebook comparison;
+\Cref{sec:v-pllm-comparison} uses a notebook-adapted PLLM-style baseline
+instead. The thesis pipeline also limits repair to two rounds, provides a
+human-readable explanation, and records structured outcomes for
+knowledge-graph export.
 
-PLLM differs from this thesis in four ways that matter for the present
-design: it operates on standalone Python files, not on notebooks embedded in
-a reproducibility pipeline; it uses unbounded multi-round iteration rather
-than a fixed number of repair attempts; it produces no human-readable
-explanation of the failure; and it does not feed its results into any
-knowledge graph. \Cref{sec:rw-gap} returns to each of these points directly.
+In their experiments, PLLM reported 218 (15.97\%) more fixes than ReadPyE and
+281 (21.58\%) more fixes than PyEGo~\cite{bartlett2025pllm}. More broadly,
+RAG grounds a model's output in retrieved information rather than relying only
+on its training knowledge~\cite{lewis2020rag,gao2024ragsurvey,tao2025racg}.
+This makes it a suitable pattern for package repair, where a proposed package
+name or version must be checked against current package information.
+
+Adjacent work also uses LLMs to reconstruct executable repository
+environments. Installamatic searches repository documentation before generating
+and testing an installation environment, ExecutionAgent prepares build and
+test scripts for arbitrary projects, and Repo2Run records a successful
+container-configuration process as a Dockerfile
+\cite{milliken2024installamatic,bouzenia2025executionagent,hu2025repo2run}.
+These systems show that environment reconstruction is an active research
+problem. The present pipeline has a narrower purpose: it starts from a
+recorded notebook dependency failure, restricts a repair to verified package
+evidence, and validates that action by re-executing the notebook.
 
 \subsection{LLM-Based Program Repair and Notebook-Specific Work}
 \label{sec:rw-apr}
@@ -152,14 +242,14 @@ al.'s Byam~\cite{reyes2025byam} and Tang et al.'s
 SynFix~\cite{tang2025synfix} both target dependency-aware repair
 outside the notebook setting: breaking dependency updates in Java, and
 structured cross-file repair, respectively. Both motivate giving the
-repair model structured dependency context rather than the bare error
-message. This thesis follows that principle in a different form. The
-repair prompt carries the classified error (type, message, failing
-module, subtype, root-cause hint), the failing cell's source where it
-could be recovered, and release evidence retrieved live from PyPI; a
-repository's declared requirements are used later, when FixApplicator
-reconstructs the execution environment, not as evidence handed to the
-repair model (\Cref{sec:m-repair-nodeps}).
+repair process structured dependency context rather than the bare error
+message. This thesis follows that principle in a different form. The repair
+component uses the classified error and verified package evidence. It also
+reads repository dependency declarations, such as \texttt{requirements.txt},
+as contextual but non-authoritative evidence. A declaration can support or
+conflict with a candidate, but it cannot prove that a distribution provides a
+particular import; PyPI and wheel-import evidence remain the verification gate
+(\Cref{sec:m-repair-retrieval}).
 
 On the interactive side, Jupyter AI~\cite{jupyterai2023} lets a user ask an
 LLM inside JupyterLab to explain an error or generate a fix. It is a useful
@@ -172,34 +262,25 @@ hundreds of notebooks, and existing structured failure metadata to build on.
 
 Model and prompt choice also draw on this literature. Szalontai et
 al.~\cite{szalontai2024codellama} find that a smaller, code-specialised
-model can outperform a larger general-purpose one on bug-fixing tasks,
-and that prompt design affects repair quality about as much as model
-size does. A broader empirical study of LLM-based
-APR~\cite{empiricalapr2025} confirms that code-specialised models tend
-to lead on Python repair specifically, across more than 600,000
-patches. Dinh et al.'s comparison of prompting techniques for code
+model can outperform a larger general-purpose model on bug-fixing tasks.
+A broader empirical study of LLM-based APR~\cite{empiricalapr2025} likewise
+finds that code-specialised models tend to perform well on Python repair.
+Dinh et al.'s comparison of prompting techniques for code
 generation~\cite{dinh2024codeprompteval} informs the structured-output,
-few-shot prompt design in \Cref{chap:methodology}. Chain-of-thought
-prompting~\cite{wei2022cot} was considered and not adopted: the prompts
-request a structured JSON answer with few-shot examples rather than
-explicit intermediate reasoning, because the benefit of additional
-reasoning prompts for locally deployable models of this size is
-uncertain and a second prompt technique would have made the comparison
-less controlled. Dinh et al.
-in particular find that including a project's declared package list in
-the prompt measurably improves dependency-aware generation. The repair
-prompt in this thesis applies the same idea to a different, verifiable
-source: instead of the project's own package list, it supplies the
-candidate releases retrieved live from PyPI for the failing distribution,
-so that every version the model can choose is one that is known to exist.
+few-shot prompt design described in \Cref{chap:methodology}. Their finding
+that declared package information can improve dependency-aware generation is
+also relevant here. The pipeline reads repository dependency declarations as
+context, while verified PyPI candidates constrain any package or version that
+can be selected. The detailed prompt design is described in
+\Cref{chap:methodology}.
 
 \section{FAIR Principles and Knowledge Graphs}
 \label{sec:rw-fair}
 
-The FAIR Jupyter project this thesis extends is itself grounded in the
-FAIR principles: that data, and by extension research software, should
-be Findable, Accessible, Interoperable, and
-Reusable~\cite{wilkinson2016fair}. Barker et al.~\cite{barker2022fair4rs}
+The FAIR Jupyter project provides the execution records and knowledge graph
+that this thesis builds on. It is grounded in the FAIR principles: that data,
+and by extension research software, should be Findable, Accessible,
+Interoperable, and Reusable~\cite{wilkinson2016fair}. Barker et al.~\cite{barker2022fair4rs}
 extend these principles specifically to research software. They argue
 that the Reusable principle for software requires recording the
 \emph{provenance} of its execution environment -- not only the code
@@ -210,10 +291,18 @@ this kind of provenance for the original execution attempts. Recording
 a repair attempt in the same graph, using the PROV
 ontology~\cite{provenance2013} for the activity/agent/time structure,
 extends that existing provenance record to cover repair as well as
-detection. This is the basis for objective O6, designed in
+detection. Other provenance approaches make complementary choices: ProvONE
+extends PROV for scientific-workflow structure, noWorkflow captures
+provenance directly from scripts, and RO-Crate packages research artefacts
+with machine-readable metadata
+\cite{provone2016,noworkflow2014,rocrate2022}. The repair mapping uses the
+smaller PROV-O subset needed to record the evidence, decision, and outcome of
+each repair attempt. This is the basis for objective O6, designed in
 \Cref{chap:architecture}, implemented in \Cref{chap:methodology}, and
-validated in \Cref{chap:validation} first on pilot data and then over the
-complete table of the final evaluation.
+validated in \Cref{chap:validation} first on pilot data and then by locally
+materialising the complete table of the final evaluation. That materialisation
+is a validated run artefact, rather than a published or publicly queryable
+repair graph.
 
 \section{Research Gap}
 \label{sec:rw-gap}
@@ -231,18 +320,17 @@ time~\cite{grotov2024untangling,grotov2024debug}. FAIR-aligned provenance
 recording exists for the original failures~\cite{samuel2024fairkg}.
 
 Among the systems reviewed for this thesis, none combines all of the
-following: (1) an LLM-based repair
-layer that runs autonomously, without a user manually triggering each
-attempt; (2) inside an existing reproducibility pipeline rather than on
-standalone files; (3) with the repair suggestion grounded in live PyPI data
-specifically for the pip-based dependency errors that pipeline already
-detects; and (4) paired with a plain-language explanation and, eventually,
-provenance recorded as RDF linked to the same knowledge graph the pipeline
-already produces.
+following: (1) an evidence-grounded repair layer with limited LLM roles that
+runs autonomously, without a user manually triggering each attempt; (2) a
+separate, repository-aware notebook repair pipeline fed by failures recorded
+in a reproducibility pipeline; (3) repair suggestions grounded in PyPI data
+for pip-based dependency errors; and (4) a plain-language explanation together
+with an RDF export designed to interoperate with the FAIR Jupyter knowledge
+graph.
 
-PLLM~\cite{bartlett2025pllm} is the closest system in mechanism, but it is
-not pipeline-embedded, does not explain a failure, and does not write to a
-knowledge graph. Grotov et al.'s agents~\cite{grotov2024untangling,
+PLLM~\cite{bartlett2025pllm} is the closest system in mechanism, but it was
+not designed for repository-based notebook failures and does not provide the
+explanation or knowledge-graph export added here. Grotov et al.'s agents~\cite{grotov2024untangling,
 grotov2024debug} are the closest for notebooks specifically, but they assume
 an interactive session with a live kernel, not an autonomous batch pass over
 a pipeline's own residual failures. \Cref{tab:rw-gap} summarises this
@@ -263,7 +351,7 @@ positioning against the thesis objectives introduced in
     \hline
     O4 -- Benchmark dataset & No reviewed benchmark covers dependency repair on biomedical notebooks & Grotov~\cite{grotov2024untangling}, Pimentel~\cite{pimentel2019msr} \\
     \hline
-    O5 -- Pipeline integration & The FAIR Jupyter pipeline stops at logging; no repair layer exists yet & Samuel et al.~\cite{samuel2025docker,samuel2024gigascience,samuel2024fairkg} \\
+    O5 -- Automated repair pipeline & The FAIR Jupyter pipeline stops at logging; no separate repair layer exists yet & Samuel et al.~\cite{samuel2025docker,samuel2024gigascience,samuel2024fairkg} \\
     \hline
     O6 -- KG enrichment & None of the reviewed systems records repair provenance as FAIR RDF triples & \cite{samuel2024fairkg}, PROV-O~\cite{provenance2013}, \cite{wilkinson2016fair} \\
     \hline
@@ -277,3 +365,68 @@ package-registry-grounded LLM repair layer for dependency failures in a FAIR
 Jupyter notebook pipeline, that also validates its own repairs by
 re-executing the notebook, rather than trusting the model's suggestion on
 faith.
+
+\section{Requirements Derived from the Research Gap}
+\label{sec:rw-requirements}
+
+The reviewed work motivates concrete requirements for the workflow. Existing
+reproducibility pipelines record failures but do not derive a repair decision;
+interactive notebook agents require a user; and LLM-based repair systems need
+evidence and execution-based validation. \Cref{tab:rw-requirements} makes
+these requirements explicit and states how each one is checked in this thesis.
+They are design and evaluation criteria, not claims that one earlier system
+must satisfy every requirement.
+
+\begin{table}[p]
+\centering
+{\footnotesize
+\renewcommand{\arraystretch}{1.12}
+\begin{tabular}{|p{0.8cm}|>{\raggedright\arraybackslash}p{5.8cm}|>{\raggedright\arraybackslash}p{4.4cm}|}
+  \hline
+  \textbf{ID} & \textbf{Requirement} & \textbf{Verification in this thesis} \\
+  \hline
+  FR1 &
+  Classify recorded \texttt{ModuleNotFoundError} and \texttt{ImportError}
+  rows and decide whether they are within the pip-based repair scope. &
+  Scope rules and the 214-record output are reported in
+  \Cref{chap:problem-dataset}; classifier checks are reported in
+  \Cref{chap:validation}. \\
+  \hline
+  NFR1 &
+  Use an open-weight model that can be deployed on local or institutional
+  hardware. If a remotely served deployment is used, record it as a
+  provider-specific evaluation condition. &
+  Run manifests record model, provider, and serving configuration. Gemma uses
+  local Ollama; the Qwen configuration records the remote institutional
+  service separately. \\
+  \hline
+  NFR2 &
+  Produce a plain-language explanation that a researcher without a software
+  development background can read. &
+  Explanation completion and the human evaluation are reported in
+  \Cref{chap:validation}. \\
+  \hline
+  NFR3 &
+  Record enough provenance to trace a decision, its supporting evidence, and
+  its execution outcome. &
+  The JSONL trace, SQLite table, run manifest, and RDF export are described in
+  \Cref{chap:methodology} and checked in \Cref{chap:validation}. \\
+  \hline
+  NFR4 &
+  Once the configuration and evidence sources are fixed, process the target
+  dataset without per-record manual intervention. &
+  The 187-record evaluation runs unattended. Mapping and evidence-source
+  preparation occur before the run, not as per-record decisions. \\
+  \hline
+  NFR5 &
+  Keep the classifier, explainer, repair component, Docker application, and
+  logging component modular and configurable. &
+  Component interfaces and configuration files are specified in
+  \Cref{chap:architecture}; tests and manifests record the selected setup. \\
+  \hline
+\end{tabular}
+}
+\caption{Functional and non-functional requirements derived from the
+related-work gap, with their verification evidence.}
+\label{tab:rw-requirements}
+\end{table}

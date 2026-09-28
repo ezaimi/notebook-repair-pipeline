@@ -1,0 +1,20 @@
+dataset:
+  i2_path: "data/context-classification-v2/dependency_error_contexts.jsonl"
+
+upstream_docker_pipeline:
+  db_path: "~/era/computational-reproducibility-pmc-docker/data/db/db.sqlite"
+
+execution:
+  require_recorded_commit: true
+  # The strict exact-commit V2 run clones from remote repositories.  The
+  # 13-record safety pass showed that 120 seconds caused network-level clone
+  # timeouts despite available commits, so V2 permits five minutes while all
+  # later Docker stages retain their existing independent bounds.
+  clone_timeout_seconds: 300
+  checkout_timeout_seconds: 60
+  build_timeout_seconds: 600
+  run_timeout_seconds: 900
+  cleanup_timeout_seconds: 30
+
+output:
+  path: "data/fix-attempts-v2/fix_attempts.jsonl"

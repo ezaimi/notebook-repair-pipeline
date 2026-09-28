@@ -1,30 +1,36 @@
 \chapter{Validation and Evaluation}
 \label{chap:validation}
 
-This chapter reports the evidence behind every claim this thesis makes
-about its own system, in increasing order of scale.
+This chapter first validates the pipeline and then evaluates its performance.
+Validation asks whether the implementation behaves as designed. It begins with
+automated tests of controlled component behaviour, then uses small real-system
+checks to confirm that the components can work with PyPI, an LLM service,
+Docker, Git repositories, and the RDF mapping tool. Evaluation asks what the
+complete pipeline achieves on previously unseen notebook failures. It uses the
+reserved 187-record evaluation split (\Cref{chap:problem-dataset}).
 
-It starts with the automated test suite, which checks each component's
-logic in isolation against mocked external systems. It then reports the
-real-system pilots: small, hand-picked runs that check whether the same
-components behave correctly against the real PyPI registry, a real Ollama
-model, real Docker execution, real GitHub repositories, and the real
-Morph-KGC mapping engine. \Cref{sec:v-i7} extends these to the
-orchestrator driving several components together in one unattended pass.
+The order of the chapter follows this logic. \Cref{sec:v-testing} checks the
+deterministic rules in isolation. \Cref{sec:v-i4,sec:v-i5,sec:v-i6,sec:v-i7}
+then validate the resolver, Docker application, RDF logging, and two-round
+orchestrator against real services on small pilot cases. Only after these
+checks does \Cref{sec:v-final-eval} report the full 187-record run. The later
+sections place that main result in context through the Gemma--Qwen sensitivity
+check, the matched PLLM-style comparison, the reader studies, and the stated
+threats to validity.
 
-\Cref{sec:v-final-eval} then reports the thesis's final evaluation: the
-final frozen implementation of the same orchestrator, run over the
-complete 187-row evaluation split (\Cref{chap:problem-dataset}) with
-Gemma-2 9B. Its explanation results (\Cref{sec:v-final-explanation})
-together with the human study in \Cref{sec:v-human-eval} answer RQ1; its
-repair results (\Cref{sec:v-final-primary} to
-\Cref{sec:v-final-interpretation}) answer RQ2, keeping targeted-error
-resolution and full notebook recovery apart.
-\Cref{sec:v-model-sensitivity} repeats the evaluation with the language
-model replaced by Qwen3.6-35B-A3B-MLX-8bit and answers RQ3.
-\Cref{sec:v-threats} states what all of this does and does not license
-concluding.
+The final evaluation reports explanation completion, repair outcomes,
+targeted-error resolution, and complete notebook recovery. Targeted-error
+resolution and full notebook recovery are kept separate: a repair can remove
+the dependency error it was designed to address while execution still reaches
+a later, unrelated failure. The chapter also examines model sensitivity in a
+matched Gemma--Qwen comparison, compares the pipeline with a
+notebook-adapted PLLM-style baseline, and reports two reader studies. The
+first study measures how participants judge the quality of frozen LLM
+explanations. The second, blinded study compares those explanations with a
+deterministic resolver-informed template that uses verified package evidence
+but no LLM. The chapter ends by stating the limits of these results.
 
+\iffalse
 \section{Automated Testing}
 \label{sec:v-testing}
 
@@ -72,7 +78,7 @@ scale.
       metrics, the 18 integrity checks, ground-truth scoring
       (\Cref{sec:v-final-manifest}). \\
     \hline
-    Model-provider abstraction (Ollama, Kiste) & 10 &
+    Model-provider abstraction & 10 &
       Provider dispatch shared by the Gemma and Qwen runs
       (\Cref{sec:v-model-sensitivity}). \\
     \hline
@@ -121,39 +127,63 @@ a real operating system, a running Docker environment, or a real network;
 \Cref{sec:m-fixapply-bugs} showed three real bugs that a mocked test could
 not have caught. The pilots below check exactly that.
 
+\fi
+
+\section{Automated Testing}
+\label{sec:v-testing-current}
+\label{sec:v-testing}
+
+The frozen final-evaluation implementation had 711 passing project tests.
+Later additions brought a collection-only inventory to 759 test functions.
+Thus, 711 is a documented passing execution, whereas 759 is a later coverage
+inventory, not a claim that 759 tests passed in the final evaluation. The tests
+cover data preparation, classification, explanation validation, resolver
+evidence checks, safe command construction, Docker orchestration, logging,
+manifests, and evaluation metrics. They check deterministic component behaviour
+and prevent regressions in the repair safety rules, but cannot show that a
+package repair works in a real repository. That requires the real PyPI, Docker,
+and notebook re-execution checks reported below.
+
+The tests deliberately keep external services mocked. They check, for example,
+that malformed LLM output is rejected, a distribution proposed by an LLM is
+not accepted without verification, unsafe shell arguments are refused, a
+second round cannot exceed the two-round cap, and an absent recorded commit
+does not silently fall back to a repository's default branch. These checks
+establish expected component behaviour; the evaluation assesses whether the
+complete workflow works on actual notebook records.
+
 \section{RAGRepairAgent Against Real PyPI and a Real Model}
 \label{sec:v-i4}
 
+This section validates the repair-proposal component against the external
+services on which it depends. It first checks whether the resolver can obtain
+and verify package evidence from live PyPI and whether the model can turn that
+evidence into a bounded proposal. It then examines whether FixApplicator can
+apply the resulting repairs in repository-specific Docker environments.
+
 \subsection{Retrieval Against Real PyPI}
 
-The five import names used in the original retrieval-design check
-(\texttt{sklearn}, \texttt{umap}, \texttt{pkg\_resources}, \texttt{scipy},
-\texttt{dms\_variants}) were re-checked against the real
-\texttt{retrieve()} entry point and the live PyPI registry. All four
-mapped names resolved to their real PyPI distributions, with plausible,
-current candidate versions. \texttt{dms\_variants} has no verified
-mapping; it returned \texttt{mapping\_unknown}, and no PyPI request was
-made. This confirms under real conditions that an unmapped import never
-reaches the network.
+The resolver was checked against the live PyPI service using representative
+imports, including \texttt{sklearn}, \texttt{cv2}, \texttt{scipy}, and an
+unknown import. It first forms distribution candidates from reviewed special
+mappings, same-name lookup, PEP~503 normalisation, and a public
+import-to-distribution mapping. It then accepts a candidate only when PyPI
+metadata confirms that the distribution exists and wheel metadata confirms
+that it provides the requested top-level import. PEP~503 defines the name
+normalisation used by this process, while PEP~691 defines the JSON form of
+the PyPI simple API used to obtain release-file metadata. The wheel archive
+format, including its \texttt{.dist-info} and \texttt{RECORD} information, is
+defined by PEP~427 \cite{pep503,pep691,pep427}.
 
-\begin{sloppypar}
-A second check, made during the implementation of RAGRepairAgent,
-extended the mapping table by two entries. \texttt{cv2} and
-\texttt{skimage} are among the frequent failing modules of the working
-dataset (\Cref{tab:pd-top-modules}), and neither had an entry in
-\texttt{config/}\allowbreak\texttt{package\_mapping.yaml}, so the
-retriever returned \texttt{mapping\_unknown} for both. Their
-distributions are generic, well-known import-to-distribution
-correspondences, not information derived from any evaluation outcome.
-The entries \texttt{cv2: opencv-python} and
-\texttt{skimage: scikit-image} were added on 2026-08-23, checked against
-the real PyPI registry, and confirmed by a regression check that the
-existing \texttt{sklearn} mapping still resolved correctly. The mapping
-table has not changed since: it was frozen with the rest of the
-configuration on 2026-09-12 (\Cref{sec:v-final-manifest}), before the
-final runs, and no entry was added in response to a final evaluation
-result (\Cref{sec:v-final-pypi}).
-\end{sloppypar}
+For example, the special mapping \texttt{sklearn} $\rightarrow$
+\texttt{scikit-learn} was verified because a wheel for
+\texttt{scikit-learn} provides the import \texttt{sklearn}.
+\texttt{dms\_variants} exercises the normalisation path
+(\texttt{dms-variants}). An import for which no deterministic candidate can
+be verified is not installed. Only then may the LLM propose one additional
+distribution name; that proposal must pass the same PyPI and wheel checks.
+This real-system check validates the resolver's safety boundary, not its
+coverage over the complete evaluation set.
 
 \subsection{Repair Proposals Against a Real Model}
 
@@ -172,21 +202,18 @@ real local Ollama model, in four pilot runs:
   \item The same record, rerun at 300 seconds, produced a schema-valid,
         grounded proposal: install \texttt{scikit-learn}.
   \item A \texttt{wrong\_version} record (the \texttt{scipy.integrate.cumtrapz}
-        case from \Cref{tab:m-compat}, traced in full in
+        case, traced in full in
         \Cref{sec:m-worked-example}) produced a grounded
-        \texttt{pin\_version} proposal for \texttt{scipy==1.13.1}, using the
+        \texttt{pin\_version} proposal for \texttt{scipy==\allowbreak 1.13.1}, using the
         real compatibility-evidence intersection on the first attempt.
 \end{itemize}
 
 \subsection{What This Pilot Does and Does Not Show}
 
-The pilot shows that real PyPI retrieval, real import-name mapping, and
-real model proposal generation work together across RAGRepairAgent's
-retrieval-to-proposal flow. It also shows that a timeout leads to a retry
-and then to a safe abstention, not to a hang or an invented result. It
-does not show an installed package, a modified environment, or a
-re-executed notebook, because none of that happens at this step.
-Validating a proposal is FixApplicator's job, covered next.
+The pilot shows that retrieval, evidence checking, and the bounded LLM
+decision can work together against real services. It does not establish
+repair effectiveness: installing the selected package and re-executing the
+notebook are FixApplicator's responsibility, evaluated next.
 
 \section{FixApplicator Against Real Docker Execution}
 \label{sec:v-i5}
@@ -201,6 +228,7 @@ This was a real, unplanned exercise of that fallback path.
 \begin{table}[htbp]
   \centering
   \small
+  \setlength{\tabcolsep}{3pt}
   \begin{tabular}{|p{1.7cm}|p{3.2cm}|p{2.6cm}|p{5.7cm}|}
     \hline
     \textbf{Case} & \textbf{Original error} & \textbf{Fix applied} & \textbf{Result} \\
@@ -208,13 +236,13 @@ This was a real, unplanned exercise of that fallback path.
     1 -- \texttt{sklearn} & \texttt{ModuleNot\-FoundError}: sklearn & install \texttt{scikit-learn} &
       Original error gone; \texttt{still\_failing} on a later, unrelated \texttt{No module named 'pandas'}. \\
     \hline
-    2 -- \texttt{scipy} & \texttt{ImportError}: cumtrapz & pin \texttt{scipy==1.13.1} &
+    2 -- \texttt{scipy} & \texttt{ImportError}: cumtrapz & pin \texttt{scipy==\allowbreak 1.13.1} &
       Original error gone; \texttt{still\_failing} on a later, unrelated \texttt{No module named 'tf\_keras'}. \\
     \hline
     3 -- controlled failure & synthetic: non-existent repository & n/a &
       \texttt{apply\_error}, failure stage \texttt{clone}; no Docker artefacts created. \\
     \hline
-    4 -- \texttt{cv2} & \texttt{ModuleNot\-FoundError}: cv2 & install \texttt{opencv-python} &
+    4 -- \texttt{cv2} & \texttt{ModuleNot\-FoundError}: cv2 & install \texttt{opencv-\allowbreak python} &
       Original error gone; \texttt{still\_failing} on a missing \emph{system} library (\texttt{libxcb.so.1}), a known characteristic of \texttt{opencv-python} on a minimal base image. \\
     \hline
     5 -- \texttt{sklearn} (2nd repo) & \texttt{ModuleNot\-FoundError}: sklearn & install \texttt{scikit-learn} &
@@ -266,60 +294,62 @@ original dependency error but exposed a later failure.
 \section{Result Logging and Knowledge-Graph Enrichment}
 \label{sec:v-i6}
 
+This section checks whether the pipeline can record repair attempts as RDF while
+keeping them linked to the existing FAIR Jupyter notebook records. It first
+verifies that both pipelines identify the same notebooks, then exercises the
+RML mapping on pilot data and reports the current RDF status of the final
+evaluation.
+
 \subsection{Notebook-Identity Alignment}
 \label{sec:v-i6-alignment}
 
 \begin{sloppypar}
-The RML mapping in \Cref{sec:m-resultlogger-rml} links a repair attempt
-to the notebook it repairs. This only works if the Docker pipeline's
-\texttt{notebook\_id} and \texttt{repository\_id} identify the same
+The RML mapping in \Cref{sec:m-resultlogger-rml} links each repair attempt
+to the notebook it repairs. This requires the Docker pipeline's
+\texttt{notebook\_id} and \texttt{repository\_id} to refer to the same
 notebooks and repositories as the existing FAIR Jupyter knowledge graph.
-That graph was generated from the earlier, conda-based pipeline
-(\Cref{sec:pd-why-docker}), not from the Docker pipeline this thesis
-builds on, so the alignment could not be assumed. It was checked
-directly. All \textbf{214} rows of the classification dataset
-(\Cref{sec:m-classification}) were cross-checked against the knowledge
-graph's own \texttt{repositories.csv} and \texttt{notebooks.csv} source
-files, comparing each row's resolved repository path and notebook
-filename for an exact string match. All 214 rows matched on both
+That alignment could not be assumed because the graph was produced by an
+earlier conda-based pipeline (\Cref{sec:pd-why-docker}).
+
+It was therefore checked directly. All \textbf{214} classification records
+(\Cref{sec:m-classification}) were compared with the knowledge graph's
+\texttt{repositories.csv} and \texttt{notebooks.csv} source files. For each
+record, the resolved repository path and notebook filename had to match
+exactly. Every record matched on both
 \texttt{repository\_id}$\to$\texttt{repository} and
-\texttt{notebook\_id}$\to$\texttt{name}, with zero missing and zero
+\texttt{notebook\_id}$\to$\texttt{name}; there were no missing or
 mismatched records.
 \end{sloppypar}
 
-Within the inspected dataset, the Docker pipeline and the FAIR Jupyter
-knowledge graph therefore use the same
-\texttt{repository}/\texttt{notebook} primary keys for the same
-notebooks. A repair attempt can link directly to its existing notebook
-resource via \texttt{notebook\_id} (\Cref{sec:m-resultlogger-identity}),
-and no crosswalk table between the two pipelines is needed. This result
-establishes alignment for the inspected FAIR Jupyter source dataset. It
-does not extend to a knowledge-graph deployment built from a different
-data snapshot.
+The two pipelines therefore use the same
+\texttt{repository}/\texttt{notebook} keys for this dataset. A repair attempt
+can link directly to its existing notebook resource through
+\texttt{notebook\_id} (\Cref{sec:m-resultlogger-identity}); no separate
+crosswalk table is needed. This result establishes alignment only for the
+inspected FAIR Jupyter source dataset. A graph built from another data snapshot
+would need its own check.
 
 \subsection{Executing the RML Mapping with Morph-KGC}
 \label{sec:v-i6-morphkgc}
 
 \begin{sloppypar}
-The RML mapping described in \Cref{sec:m-resultlogger-rml} was also
-executed, with Morph-KGC, the mapping engine the existing
-\texttt{run\_fairjupyter\_kg.sh} build script uses for every other table
-in the knowledge graph. A \texttt{repair\_attempts.csv} file was
-assembled from the real classification, explanation, and repair-proposal
-pilot records reported in \Cref{sec:v-i4}. No live fix-application batch
-output existed yet, so one row used a labelled synthetic FixApplicator
-record, so that the outcome and post-repair error fields could also be
-exercised in the generated RDF.
+The RML mapping was also executed with Morph-KGC, the engine used by the
+existing \texttt{run\_fairjupyter\_kg.sh} build script for the rest of the
+knowledge graph. The input \texttt{repair\_attempts.csv} combined real
+classification, explanation, and repair-proposal pilot records from
+\Cref{sec:v-i4}. At this stage, no live batch output from FixApplicator was
+available. One clearly labelled synthetic FixApplicator row was therefore
+included so that the RDF fields for an outcome and a post-repair error could
+also be checked.
 \end{sloppypar}
 
-Running the mapping over this file produced valid Turtle with no RML or
-Turtle syntax error. The resulting RDF was then inspected directly. A
-SQLite column left \texttt{NULL}, such as an abstained attempt's
-\texttt{install\_name}, produced no triple for the corresponding
-predicate, never an empty-string literal. \texttt{repr:exception} and
-\texttt{repr:msg} appeared only on the one row that carried a post-repair
-error. \texttt{prov:endedAtTime} was present, typed
-\texttt{xsd:dateTime}, on every row.
+Morph-KGC produced valid Turtle with no RML or Turtle syntax error. The RDF
+output was then inspected directly. When a SQLite value was \texttt{NULL},
+such as \texttt{install\_name} for an abstained attempt, the mapping produced
+no triple rather than an empty string. The post-repair predicates
+\texttt{repr:exception} and \texttt{repr:msg} appeared only on the row with a
+post-repair error. Every row had a \texttt{prov:endedAtTime} value typed as
+\texttt{xsd:dateTime}.
 
 The generated \texttt{repr:hadRepairAttempt} links were also checked
 against real notebook resources rather than against the CSV's
@@ -342,8 +372,8 @@ same mapping was afterwards run, unchanged, over the complete
 \texttt{repair\_attempts} table of the final evaluation; the next
 subsection reports that run.
 
+\iffalse
 \subsection{Full-Scale Materialisation of the Final Evaluation Run}
-\label{sec:v-i6-fullscale}
 
 \begin{sloppypar}
 Once the final evaluation of \Cref{sec:v-final-eval} had been frozen, its
@@ -353,7 +383,7 @@ unmodified mapping (\Cref{sec:m-resultlogger-rml}) through Morph-KGC,
 invoked as one process for this one mapping file, exactly as the upstream
 \texttt{run\_fairjupyter\_kg.sh} build script invokes every mapping. The
 table is the SQLite database of run
-\texttt{i10-eval-gemma-round2-explanations-20260918T161356Z}; it holds
+the recorded i10 Round-2-explanation evaluation; it holds
 235 rows, 187 for Round 1 and 48 for Round 2. No component, mapping,
 configuration, or result value was changed for this step, and no
 evaluation run was repeated: the chain pilot-validated above was run over
@@ -450,6 +480,27 @@ artefact distinct from the one that meets O4: the benchmark table of
 same 235 repair attempts, one as rows and the other as linked RDF
 resources.
 
+\fi
+
+\subsection{Final-Evaluation RDF Materialisation}
+\label{sec:v-i6-fullscale-current}
+\label{sec:v-i6-fullscale}
+
+The pilot established the mapping and notebook-identity alignment on
+representative records. After the final Gemma evaluation was frozen, the
+unchanged exporter and RML mapping were run locally over its complete 235-row
+\texttt{repair\_attempts} table (187 Round-1 and 48 Round-2 rows). Morph-KGC
+produced 3{,}478 triples: one repair-attempt resource per row and 235 links to
+187 existing notebook IRIs. The saved report checked the CSV, SQLite table, and
+RDF output against one another; all 24 checks passed.
+
+This is a locally materialised and validated final-evaluation graph, not a
+published repair graph. Its files remain with the evaluation artefacts and were
+not loaded into the public FAIR Jupyter triple store. The thesis therefore
+shows that the final run can be represented and linked as RDF, but does not
+evaluate public hosting or third-party querying. Those deployment and reuse
+steps remain future work.
+
 \section{The Orchestrator End to End}
 \label{sec:v-i7}
 
@@ -464,6 +515,7 @@ attempt, as \Cref{tab:v-i7-cases} sets out.
 \begin{table}[htbp]
   \centering
   \small
+  \setlength{\tabcolsep}{3pt}
   \begin{tabular}{|p{1.9cm}|p{3.2cm}|p{3.2cm}|p{5.0cm}|}
     \hline
     \textbf{Case} & \textbf{Round 1} & \textbf{Round 2 trigger} & \textbf{Round 2 result} \\
@@ -499,23 +551,26 @@ confirmed directly in the resulting SQLite rows. Each round produced its
 own \texttt{repair\_attempts} row (\Cref{sec:m-resultlogger}).
 
 Neither Round-2 attempt in this small pilot produced a successful second
-repair. Both triggered correctly and abstained correctly, for two
-different reasons. The mocked test suite (\Cref{sec:v-testing})
-separately checks that the second-round mechanism works end to end for
-cases where RAGRepairAgent does propose a fix and FixApplicator does
-apply it: the trigger conditions, the reclassification and explanation
-of the new error, the cumulative environment, the shared run identifier,
-and the two-round cap. \Cref{sec:v-final-eval} reports how the second
-round behaved across the full evaluation split. Round 2 fired for 48
-notebooks and produced a real second repair proposal for 12 of them. As
-in this pilot, none of those 12 second attempts produced a completely
-clean \texttt{fixed} result.
+repair. Both attempts triggered and then abstained for different recorded
+reasons. This result checks the control flow; it does not measure second-round
+repair effectiveness.
+
+The mocked test suite (\Cref{sec:v-testing}) separately tests cases in which
+RAGRepairAgent proposes a fix and FixApplicator applies it. Those tests cover
+the trigger conditions, reclassification and explanation of the new error, the
+cumulative environment, the shared run identifier, and the two-round cap. An
+earlier integrated development run (\texttt{i10 Round-2-explanation})
+triggered Round~2 for 48 notebooks and produced a second repair proposal for
+12 of them. None reached a completely clean \texttt{fixed} result. These
+observations validate the control flow only; the separate Round-2 population
+from the live-PyPI evaluation is reported in \Cref{sec:v-final-eval}.
 
 \Cref{tab:v-i7-cases} focuses on validating the second-round
 repair-control flow. Round-2 explanation generation is evaluated
 separately as part of the final integrated pipeline in
 \Cref{sec:v-final-eval}.
 
+\iffalse
 \section{Final Evaluation on the Reserved Evaluation Split}
 \label{sec:v-final-eval}
 
@@ -1030,14 +1085,15 @@ The record corresponds to
 \texttt{notebooks/jDR\_AJIVE\_\allowbreak Template.ipynb} in
 \texttt{baprice/}\allowbreak\texttt{AJIVE-jDR-\allowbreak Integration}.
 Its original failure is an incompatibility involving
-\texttt{scipy.sparse.sputils.isshape}, one of the wrong-version patterns
-covered by the compatibility evidence in \Cref{tab:m-compat}.
+\texttt{scipy.sparse.sputils.isshape}, handled through the date-anchored
+version-evidence policy in \Cref{sec:m-repair-compat}.
 \Cref{tab:v-case-study} traces the complete two-round execution.
 \end{sloppypar}
 
 \begin{table}[htbp]
   \centering
   \small
+  \setlength{\tabcolsep}{3pt}
   \begin{tabular}{|p{3.0cm}|p{9.6cm}|}
     \hline
     \textbf{Stage} & \textbf{Observed result} \\
@@ -1068,9 +1124,9 @@ covered by the compatibility evidence in \Cref{tab:m-compat}.
 
     PyPI evidence (Round 1) &
     The failing module resolves directly to the \texttt{scipy}
-    distribution. The compatibility registry requires a version below
-    \texttt{1.14.0}, based on the same SciPy release-note evidence
-    summarised in \Cref{tab:m-compat}. \\
+    distribution. The resolver verifies the import through wheel metadata and
+    retains only safe versions available by the recorded repository date
+    (\Cref{sec:m-repair-compat}). \\
     \hline
 
     Repair proposal (Round 1) &
@@ -1279,54 +1335,36 @@ the end of the chain for any of them.
 \subsection{LLM Model Sensitivity Analysis}
 \label{sec:v-model-sensitivity}
 
-The final evaluation above uses one specific open model, Gemma-2 9B,
-served locally through Ollama. A natural question follows: how much of
-the reported behaviour comes from that specific model, and how much from
-the pipeline around it? This is RQ3. To answer it, the same repair layer
-was run over the same 187 evaluation notebooks with the language model
-replaced. Everything else was held fixed: the pipeline structure, the
-prompts and few-shot examples, the JSON schemas, the classifier, PyPI
-retrieval and the package mapping, grounding validation, FixApplicator,
-the Round-2 trigger and explanation logic, the evaluation records, and
-the repair policy. Both runs record the same Git commit and byte-identical
-component hashes in their manifests (\Cref{sec:v-final-manifest}). Only
-model- and provider-specific serving settings differed: the model name,
-the provider (local Ollama against a remote endpoint), and the calibrated
-Qwen output-token budget described next. The comparison is therefore
-controlled at the level of the pipeline; not every configuration field
-was identical.
+The final evaluation above uses Gemma-2 9B served locally through Ollama.
+RQ3 asks whether the observed behaviour also holds when that model is
+replaced. The same 187 evaluation notebooks were therefore processed with
+Qwen3.6-35B-A3B-MLX-8bit. The two runs used the same code revision, input
+records, prompts, schemas, classifier, package mapping, frozen PyPI metadata,
+grounding checks, Docker repair procedure, and two-round limit. Their manifests
+also record the same hashes for these shared inputs. The model, provider, and
+model-specific serving settings were different. This is therefore a controlled
+pipeline comparison, but not a comparison of model architecture alone.
 
-\textbf{Setup.} The replacement model is Qwen3.6-35B-A3B-MLX-8bit, served 
-through a remote OpenAI-compatible endpoint using Kiste. A small
-provider abstraction lets the pipeline call either backend through the
-same interface; Gemma's own configuration and code path are untouched.
-Qwen needed one setting change: a larger completion budget. At Gemma's
-setting of 700 tokens, Qwen's responses were often cut off before they
-finished. A calibration run over five development-split notebooks, never
-part of the evaluation split, tested budgets of 1400, 2800, and 4096
-tokens. Truncation still occurred at 1400 and once at 2800, but not at
-4096. The budget of 4096 was therefore the smallest of the three tested
-values that eliminated observed truncation; smaller untested budgets might
-also have worked.
-The Qwen run is identified as
-\texttt{i11-eval-qwen-round2-explanations-20260919T131359Z}. It processed
-all 187 records and passed all 18 integrity checks.
+\textbf{Setup.} Qwen was called through the same provider interface as Gemma,
+but from a remote OpenAI-compatible endpoint. A small development-split
+calibration tested output budgets of 1400, 2800, and 4096 tokens. The 4096-token
+budget was the smallest tested value without an observed truncated response, so
+it was used for both Qwen components. Its evaluation manifest and raw trace
+contain one result for each of the 187 evaluation notebooks. The raw trace also keeps
+resume entries created after an already logged repair was skipped; the analysis
+uses the first completed entry for each notebook index and does not count a
+resume entry as a second evaluation result.
 
 \textbf{Explanation results.} \Cref{tab:v-model-sensitivity-explanation}
-sets the two models side by side on the explanation metrics of
-\Cref{sec:v-final-explanation}, with completion and schema validity kept
-apart. Qwen completed every explanation record on the first attempt: all
-187 original failures and all 50 newly exposed Round-2 errors, 237 of
-237, with 237 explanation calls, no retry, no timeout, no model-service
-failure, and no schema-invalid response. Gemma completed 210 of 237, and
-every one of those 210 was schema-valid. The two models therefore do not
-differ in the validity of what they produced; they differ in whether a
-response arrived at all. Gemma's 27 missing records are timeouts and one
-service error of the local, CPU-only Ollama deployment. This is a
-runtime-reliability difference under the evaluation environment: a large
-model on a remote serving endpoint against a small model on a laptop CPU.
-It is not evidence that one model explains better, and the human
-evaluation in \Cref{sec:v-human-eval} did not rate Qwen's explanations.
+reports structured explanations for the original failures and for errors exposed
+after a first repair. Qwen produced a schema-valid explanation for 186 of 187
+original failures and for all 75 newly exposed errors, giving 261 valid
+explanations out of 262 encountered errors (99.6\%). Gemma produced 238 valid
+explanations out of 264 (90.2\%). Qwen had one API timeout; Gemma had more
+unsuccessful calls and retries in the local serving environment. These numbers
+measure whether a usable structured response was returned. They do not show
+which model gives a better explanation to readers, because the human studies in
+\Cref{sec:v-human-eval} did not rate Qwen explanations.
 
 \begin{table}[htbp]
   \centering
@@ -1335,33 +1373,33 @@ evaluation in \Cref{sec:v-human-eval} did not rate Qwen's explanations.
     \hline
     \textbf{Explanation metric} & \textbf{Gemma-2 9B} & \textbf{Qwen3.6-35B-A3B} \\
     \hline
-    Original failures completed & 160/187 (85.6\%) & 187/187 (100\%) \\
+    Original failures, schema-valid & 161/187 (86.1\%) & 186/187 (99.5\%) \\
     \hline
-    Round-2 errors completed & 50/50 (100\%) & 50/50 (100\%) \\
+    Newly exposed errors, schema-valid & 77/77 (100\%) & 75/75 (100\%) \\
     \hline
-    Combined completed & 210/237 (88.6\%) & 237/237 (100\%) \\
+    All encountered errors, schema-valid & 238/264 (90.2\%) & 261/262 (99.6\%) \\
     \hline
-    Schema-valid among completed & 210/210 (100\%) & 237/237 (100\%) \\
+    Final unsuccessful explanation records & 26 & 1 \\
     \hline
-    Runtime failures (timeout / service) & 27 (26 / 1) & 0 \\
+    Explanation LLM attempts incl.\ retries & 308 & 262 \\
     \hline
-    Explanation LLM attempts incl.\ retries & 272 & 237 \\
-    \hline
-    Records needing the retry & 35 & 0 \\
+    Records needing a retry & 44 & 0 \\
     \hline
   \end{tabular}
   \caption{Explanation completion and schema validity for both models,
-  counted per encountered error (187 original failures + 50 newly exposed
-  Round-2 errors = 237 records in each run). A runtime failure is a call
-  that returned no processable response within one retry. Explanation calls
-  are separate from the repair-agent calls of
+  counted per encountered error. The number of newly exposed errors differs
+  because Docker re-execution produced different later errors in the two runs.
+  A schema-valid explanation is a response that passed the fixed JSON schema.
+  Explanation calls are separate from the repair-agent calls of
   \Cref{tab:v-model-sensitivity}.}
   \label{tab:v-model-sensitivity-explanation}
 \end{table}
 
-\textbf{Repair results.} \Cref{tab:v-model-sensitivity} compares the two
-models on the repair metrics used for the Gemma final evaluation above,
-computed the same way for both. Every aggregate figure is identical.
+\textbf{Repair results.} \Cref{tab:v-model-sensitivity} uses the same repair
+metrics for both runs. The deterministic retrieval layer made most decisions:
+in each run it verified 115 direct installations, the model chose among
+verified historical versions in 18 cases, and 54 records abstained before a
+model repair decision was needed.
 
 \begin{table}[htbp]
   \centering
@@ -1370,101 +1408,524 @@ computed the same way for both. Every aggregate figure is identical.
     \hline
     \textbf{Repair metric} & \textbf{Gemma-2 9B} & \textbf{Qwen3.6-35B-A3B} \\
     \hline
-    Round-1 abstentions & 126/187 (67.4\%) & 126/187 (67.4\%) \\
+    Round-1 abstentions & 54/187 (28.9\%) & 54/187 (28.9\%) \\
     \hline
-    Final-state abstentions & 162/187 (86.6\%) & 162/187 (86.6\%) \\
+    Final-state abstentions & 103/187 (55.1\%) & 103/187 (55.1\%) \\
     \hline
-    Repair-agent invocations & 235 (187 R1 + 48 R2) & 235 (187 R1 + 48 R2) \\
+    Repair-agent invocations & 255 (187 R1 + 68 R2) & 253 (187 R1 + 66 R2) \\
     \hline
-    Repair-LLM responses & 73 (61 R1 + 12 R2) & 73 (61 R1 + 12 R2) \\
+    Model version selections & 18 & 18 \\
     \hline
-    Repair-LLM calls incl.\ retries & 73 & 73 \\
+    Grounded Docker repair attempts & 152 & 150 \\
     \hline
-    Proposal schema validity & 73/73 (100\%) & 73/73 (100\%) \\
+    Targeted error resolution & 96/152 (63.2\%) & 92/150 (61.3\%) \\
     \hline
-    Grounding validity & 73/73 (100\%) & 73/73 (100\%) \\
+    Round-2 eligible / Docker attempts & 68 / 19 & 66 / 17 \\
     \hline
-    Grounded-proposal coverage & 73/235 (31.1\%) & 73/235 (31.1\%) \\
-    \hline
-    Targeted resolution, Round 1 & 50/61 & 50/61 \\
-    \hline
-    Targeted resolution, Round 2 & 12/12 & 12/12 \\
-    \hline
-    Targeted resolution, overall & 62/73 (84.9\%) & 62/73 (84.9\%) \\
-    \hline
-    Round-2 eligible / proposals / attempts & 48 / 12 / 12 & 48 / 12 / 12 \\
-    \hline
-    Full notebook recovery (final) & 0/187 & 0/187 \\
+    Full notebook recovery (final) & 3/187 (1.6\%) & 3/187 (1.6\%) \\
     \hline
     Final outcomes: abstained / still failing / infrastructure / method / fixed &
-      162 / 22 / 2 / 1 / 0 & 162 / 22 / 2 / 1 / 0 \\
+      103 / 57 / 13 / 11 / 3 & 103 / 55 / 15 / 11 / 3 \\
     \hline
   \end{tabular}
   \caption{Gemma-2 9B vs.\ Qwen3.6-35B-A3B-MLX-8bit on the same 187
-  evaluation notebooks, same repair pipeline, same metric definitions.
-  Denominators: abstentions and outcomes over 187 notebooks; validity and
-  targeted resolution over the 73 repair attempts that reached the model;
-  coverage over the 235 repair-agent invocations. Repair-LLM calls exclude
-  explanation calls.}
+  evaluation notebooks under the same frozen PyPI metadata and repair policy.
+  The models were served by different providers. Targeted resolution is
+  calculated over real Docker repair attempts; full recovery and final outcomes
+  are calculated over 187 notebooks.}
   \label{tab:v-model-sensitivity}
 \end{table}
 
-Identical aggregates do not mean identical decisions, so the two runs were
-also compared notebook by notebook from their raw traces. On 174 of the 187
-notebooks, every repair-relevant field matched: eligibility, retrieval
-status, the proposed action, install name and version, the FixApplicator
-outcome, the newly exposed error, the Round-2 decision, the Round-2
-proposal and outcome, and the final classification. The remaining 13
-notebooks differ in exactly one field: the version chosen in the Round-1
-\texttt{pin\_version} proposal. These are execution ids 189 to 201, all
-\texttt{wrong\_version} failures on
-\texttt{numpy.VisibleDeprecationWarning} from two repositories of the same
-group. Gemma chose \texttt{numpy==1.26.3} in all 13; Qwen chose
-\texttt{numpy==1.26.4} in all 13. The retrieval evidence given to both
-models was identical: the same five candidate versions, including both
-1.26.3 and 1.26.4, and the same compatibility constraint \texttt{<2.0.0}
-from the curated registry (\Cref{tab:m-compat}). Both choices are valid,
-grounded candidates within that constraint. This is therefore a genuine
-model-selection difference, not a retrieval or pipeline difference: given
-the same evidence, Gemma preferred the second newest compatible release
-and Qwen the newest.
+The models made different version choices in four Round-1 repairs. All four
+concerned the same missing SciPy symbol. Gemma selected SciPy~1.5.2 where
+Qwen selected 1.4.1 in three cases; in the fourth, Gemma selected 1.9.1 and
+Qwen selected 1.8.1. Each choice came from the same verified candidate list.
+The immediate repair outcome was the same within each pair, so these choices
+did not change a final recovery.
 
-The difference stopped there. In all 13 notebooks the pin installed
-successfully under both models, and re-execution then exposed the same
-new error (\texttt{No module named 'cxsystem2'} or \texttt{'matplotlib'},
-depending on the repository). The Round-2 reclassification, explanation,
-eligibility decision, proposal, and outcome were identical; the targeted
-Round-1 error counted as resolved in both; and the final classification
-was the same. Model choice produced a small difference in version
-selection for 13 NumPy repairs, but this did not change any measured
-downstream repair outcome in the evaluation set.
+Two other notebooks had a different Docker outcome despite having the same
+repair decision in both runs: the Qwen run ended with an infrastructure failure
+where the Gemma run continued to a later dependency error. This explains the
+small difference in targeted-error resolution and Round-2 counts. It is not
+evidence that one model made a better repair decision.
 
-\textbf{Interpretation.} Replacing Gemma-2 9B with Qwen3.6-35B-A3B-MLX-8bit did not change any
-aggregate repair result. The models made a different repair decision for 13
-of the 187 notebooks, but these differences affected only which compatible
-NumPy version was selected. They did not change any downstream execution
-outcome.
+\textbf{Interpretation.} Both configurations recovered the same three
+notebooks, and Qwen returned structured explanations more reliably in this
+serving setup. The repair results are close, but not identical. Because the
+provider and Docker execution conditions also changed, the observed differences
+cannot be assigned to the language model alone. The results support a narrower
+claim: the grounded pipeline produced similar repair coverage with these two
+model configurations, while the remote Qwen configuration had fewer failed
+explanation calls. They do not establish that either model is generally better.
 
-This result reflects the role of the deterministic retrieval and grounding
-layers. The model can choose only from package versions that were retrieved
-from PyPI and passed the applicable compatibility constraints. More than one
-version can satisfy these constraints, which is where the two models differed
-in this evaluation.
+\fi
 
-The two runs also had the same Round-1 abstention count of 126 out of 187.
-These abstentions occurred before the repair model was called because the
-package mapping could not resolve the failing import. Both models also resolved
-the targeted dependency error in 62 of the 73 FixApplicator attempts, while
-neither produced a fully recovered notebook within the two-round budget.
+\section{Final Evaluation on the Reserved Evaluation Split}
+\label{sec:v-final-eval-current}
+\label{sec:v-final-eval}
 
-For these two model configurations, the main limits on repair coverage were
-therefore package-mapping coverage and notebooks that exposed further dependency
-errors after a repair. The results do not establish that one model is generally
-better than the other. Qwen completed all explanation calls, whereas the Gemma
-run had 27 runtime failures, but the models were served through different
-environments and with different provider-specific settings. This difference
-therefore cannot be attributed to the language model alone.
+This section reports the final evaluation on the 187 records reserved in
+\Cref{chap:problem-dataset}. It is the main evidence for how the complete
+pipeline performs on previously unseen notebook failures.
 
+The run used \texttt{gemma2:9b}, live PyPI metadata, repository-specific
+Docker re-execution, and at most two repair rounds. A machine-readable
+manifest records the implementation, prompts, mapping files, input identifiers,
+and run settings. All 18 post-run integrity checks passed.
+
+The following subsections describe the evaluation design and provenance before
+reporting explanation, proposal, repair, and recovery outcomes. They then
+compare the two model configurations and the PLLM-style baseline, present the
+reader studies, and state the threats that bound the conclusions.
+
+\subsection{Evaluation Design and Provenance}
+\label{sec:v-final-design}
+
+The final evaluation followed one fixed sequence for every record:
+
+\begin{enumerate}
+  \item Classify the original dependency error and generate a plain-language
+        explanation.
+  \item For a repair-eligible error, retrieve and verify package evidence before
+        allowing a repair proposal.
+  \item When a proposal passes these checks, use FixApplicator to check out the
+        recorded repository commit, rebuild its Docker environment, apply the
+        action, and re-execute the notebook.
+  \item If that repair exposes a new, repair-eligible dependency error, repeat
+        the same process once for Round~2. No third round is allowed.
+  \item Store the trace and structured outcomes, then run the integrity checks
+        from which the reported metrics are derived.
+\end{enumerate}
+
+This is one bounded pipeline run, not two independent experiments.
+
+The manifest records hashes of the evaluated code and configuration, the input
+file, the model configuration, and the repository-metadata database. Unlike an
+earlier development run, the final run could reach the metadata database and
+used the recorded repository commit where checkout was possible. The raw JSONL
+trace contains one entry for every evaluation record; the structured result
+table contains the repair decisions and Docker outcomes. The reported values
+below are derived from these artefacts rather than adjusted manually.
+\label{sec:v-final-manifest}
+
+\begin{table}[htbp]
+  \centering
+  \small
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{|p{3.8cm}|p{7.2cm}|}
+    \hline
+    \textbf{Recorded item} & \textbf{Final live-PyPI evaluation value} \\
+    \hline
+    Run identifier and time & \texttt{v2-evaluation-20260925T013000Z}; 25 September 2026 (UTC). \\
+    \hline
+    Input & Reserved evaluation split; 187 dependency-error records. \\
+    \hline
+    Pipeline configuration & \texttt{gemma2:9b}; live PyPI metadata; repository-specific Docker execution; at most two repair rounds. \\
+    \hline
+    Recorded provenance & Git revision, code and configuration hashes, prompts, input hash, package-mapping evidence, and repository-metadata database hash. \\
+    \hline
+    Integrity validation & All 18 post-run checks passed, including input reconciliation, run-ID consistency, round limits, and result-logger reconciliation. \\
+    \hline
+  \end{tabular}
+  \caption{Reproducibility capsule for the final live-PyPI evaluation. The full manifest and validation report are retained with the evaluation artefacts.}
+  \label{tab:v-final-reproducibility}
+\end{table}
+
+\begin{figure}[htbp]
+  \centering
+  \begin{tikzpicture}[
+    font=\small,
+    condition/.style={draw=black!65, fill=black!3, rounded corners=2pt,
+      align=center, text width=4.3cm, minimum height=1.7cm, inner sep=6pt},
+    note/.style={align=center, text width=4.3cm},
+    arr/.style={-{Latex[length=2.2mm]}, semithick}
+  ]
+    \node[condition] (live) {\textbf{Main evaluation}\\
+      187 records; Gemma-2 9B\\live PyPI metadata and recorded-commit Docker execution};
+    \node[condition, right=3.4cm of live] (matched) {\textbf{Matched comparisons}\\
+      same 187 records\\frozen PyPI metadata for model sensitivity and the PLLM-style baseline};
+    \draw[arr] (live) -- node[midway, above=2pt, align=center, fill=white,
+      inner sep=1.5pt, text width=2.3cm] {different evaluation purpose} (matched);
+    \node[note, below=5mm of live] {Normal operating mode};
+    \node[note, below=5mm of matched] {Same package snapshot for a fair comparison};
+  \end{tikzpicture}
+  \caption{Evaluation conditions used in Chapter~6. The live-PyPI run measures
+  the workflow in normal operation. Frozen metadata is used only when two
+  configurations or methods must be compared under the same package snapshot.}
+  \label{fig:v-evaluation-conditions}
+\end{figure}
+\FloatBarrier
+
+Figure~\ref{fig:v-evaluation-conditions} distinguishes the evaluation
+conditions because they answer different questions. The live-PyPI run reports
+how the workflow operated with current package information. The two frozen
+conditions are deliberately separate matched reruns: they make a comparison
+fairer, but they do not replace the live-PyPI result.
+
+\subsection{Explanation Completion}
+\label{sec:v-final-explanation}
+
+Explanation completion and explanation quality are different questions.
+Completion asks whether the LLM returned a schema-valid response within the
+retry budget. Reader quality is evaluated separately in
+\Cref{sec:v-human-eval}. In the live-PyPI run, Gemma completed 180 of the
+187 explanations for the original failures. The seven remaining calls failed
+at runtime and produced no explanation to evaluate. The first repair round
+exposed 69 new dependency errors, all of which received a completed
+explanation before their repair eligibility was considered.
+
+Thus, 249 of 256 encountered errors received a structured explanation. This
+measures availability and schema conformance of the explanation service; it
+does not show that a reader finds an explanation useful or correct.
+
+\subsection{Repair Results}
+\label{sec:v-final-primary}
+
+Table~\ref{tab:v-final-results-current} separates the three levels that are
+easy to confuse: the 187 original notebooks, repair attempts that reached
+Docker, and repair attempts that produced a re-execution result. An
+\texttt{apply\_error} has a Docker-stage failure before the notebook can be
+judged, so it does not enter the targeted-error denominator.
+
+\begin{table}[htbp]
+  \centering
+  \small
+  \setlength{\tabcolsep}{3pt}
+  \begin{tabular}{|p{7.2cm}|r|p{3.8cm}|}
+    \hline
+    \textbf{Measure} & \textbf{Result} & \textbf{Meaning} \\
+    \hline
+    Original evaluation notebooks & 187 & One original dependency failure per record. \\
+    \hline
+    Final full notebook recoveries & 5/187 (2.7\%) & The notebook completed without an error after at most two rounds. \\
+    \hline
+    Repair decisions reaching Docker & 204 & 135 in Round~1 and 69 in Round~2. \\
+    \hline
+    Docker application errors & 24 & The proposed action could not be completed or executed in Docker. \\
+    \hline
+    Re-executed repair attempts & 180 & Attempts for which the targeted-error check was possible. \\
+    \hline
+    Targeted errors removed & 147/180 (81.7\%) & The original targeted error was absent after re-execution, even if a later error appeared. \\
+    \hline
+    Final abstentions & 52/187 (27.8\%) & No verified repair action was available. \\
+    \hline
+  \end{tabular}
+  \caption{Results of the live-PyPI Gemma evaluation. Full recovery is
+  notebook-level. Targeted-error resolution is attempt-level and therefore has
+  a different denominator.}
+  \label{tab:v-final-results-current}
+\end{table}
+
+
+\subsection{Targeted Error Resolution and Abstention}
+\label{sec:v-final-targeted}
+
+A targeted error is counted as removed when the re-executed notebook no longer
+shows that error. It may nevertheless fail later on a different dependency or
+non-dependency error. This is why 147 of 180 re-executed attempts removed their
+targeted error, whereas only five of 187 notebooks recovered completely. The
+two measurements answer different parts of RQ2 and should not be combined into
+one success rate.
+
+In Round~1, 52 records stopped because the resolver could not establish a safe
+repair. The pipeline recorded these as abstentions instead of installing an
+unverified distribution. Sixty-nine Round~1 repairs exposed a new,
+repair-eligible dependency error and triggered Round~2. Round~2 produced four
+additional full notebook recoveries. The two-round limit deliberately stops the
+process even if a later error remains.
+\label{sec:v-final-abstention}
+
+\paragraph{Where the repair decisions came from.}
+The evaluation also shows how often each decision path was used
+(\Cref{tab:v-decision-sources}). In Round~1, the resolver generated 117
+verified direct installations without a repair-model choice. The LLM selected
+one version from a verified historical list in 18 wrong-version cases. No
+unverified LLM distribution proposal reached Docker in this run. In Round~2,
+all 69 applied repairs were verified direct installations. This does not mean
+that the LLM fallback is unnecessary in general; it means that the observed
+records were resolved or safely abstained by the deterministic evidence paths.
+
+\begin{table}[htbp]
+  \centering
+  \small
+  \begin{tabular}{|p{6.5cm}|r|r|p{3.2cm}|}
+    \hline
+    \textbf{Decision path} & \textbf{Round 1} & \textbf{Round 2} & \textbf{What happened next} \\
+    \hline
+    Deterministic verified installation & 117 & 69 & Install a distribution that PyPI and wheel evidence verified. \\
+    \hline
+    LLM selection from verified historical versions & 18 & 0 & Pin one version from a safe candidate list. \\
+    \hline
+    Abstention before Docker & 52 & 0 & Do not install a package without sufficient evidence. \\
+    \hline
+    \textbf{Total records reaching this round} & \textbf{187} & \textbf{69} & \\
+    \hline
+  \end{tabular}
+  \caption{Decision sources in the live-PyPI evaluation. The LLM did not
+  choose an arbitrary package: where it selected a version, all selectable
+  versions had already been verified by the resolver.}
+  \label{tab:v-decision-sources}
+\end{table}
+
+\subsection{Outcomes by Error Subtype}
+\label{sec:v-final-subtype-outcomes}
+
+The two repair-eligible subtypes have different outcome patterns. The table
+below reports the original notebook subtype, while Docker and re-execution
+columns include a Round~2 attempt under the subtype of the newly exposed error.
+Full recovery remains a notebook-level measure, so each recovered notebook is
+counted once.
+
+\begin{table}[htbp]
+  \centering
+  \scriptsize
+  \setlength{\tabcolsep}{3pt}
+  \begin{tabular}{|p{2.0cm}|p{1.3cm}|p{1.3cm}|p{1.3cm}|p{2.35cm}|p{1.9cm}|}
+    \hline
+    \textbf{Subtype} & \textbf{Original notebooks} & \textbf{Round 1 abstentions} & \textbf{Docker attempts} & \textbf{Target removed / re-executed} & \textbf{Full recovery / original} \tabularnewline
+    \hline
+    \texttt{missing\_package} & 169 & 52 & 186 & 133/166 (80.1\%) & 4/169 (2.4\%) \tabularnewline
+    \hline
+    \texttt{wrong\_version} & 18 & 0 & 18 & 14/14 (100\%) & 1/18 (5.6\%) \tabularnewline
+    \hline
+    \textbf{Total} & \textbf{187} & \textbf{52} & \textbf{204} & \textbf{147/180 (81.7\%)} & \textbf{5/187 (2.7\%)} \tabularnewline
+    \hline
+  \end{tabular}
+  \caption{Live-PyPI outcomes by repair-eligible subtype. Round~2 attempts
+  are classified by their newly exposed error, which is why Docker attempts can
+  exceed the number of original notebooks.}
+  \label{tab:v-subtype-outcomes}
+\end{table}
+
+All 52 Round~1 abstentions occurred for \texttt{missing\_package} errors.
+That subtype also has 186 Docker attempts because all 69 newly exposed
+Round~2 errors were \texttt{missing\_package} errors. The 14 re-executed
+\texttt{wrong\_version} attempts all removed their targeted error, but this
+small denominator should not be read as a general performance estimate. The
+table therefore describes the observed mix of errors rather than ranking the
+two subtypes.
+
+\subsection{Proposal and Outcome Interpretation}
+\label{sec:v-final-proposal}
+
+The resolver made most repair decisions deterministically after checking PyPI
+and wheel evidence. The LLM was used only to propose a distribution after the
+deterministic sources failed, or to choose from an already verified list of
+historical versions. A schema-valid or evidence-grounded proposal is therefore
+not itself counted as a successful repair. Docker re-execution is the final
+judge.
+
+\paragraph{Docker application-error breakdown.}
+The recorded failure stage, execution status, and diagnostic message make the
+24 \texttt{apply\_error} outcomes more interpretable.
+
+\begin{table}[htbp]
+  \centering
+  \small
+  \setlength{\tabcolsep}{3pt}
+  \begin{tabular}{|p{3.3cm}|r|p{6.6cm}|}
+    \hline
+    \textbf{Recorded stage} & \textbf{Count} & \textbf{Trace evidence and interpretation} \\
+    \hline
+    Repository clone / working-tree checkout & 12 & All concern the same repository, for which Windows reported paths that were too long while Git checked out the working tree. Docker was not reached. \\
+    \hline
+    Package installation in the container & 11 & \texttt{fix\_install\_failed}: the proposed installation did not complete, so the notebook could not be re-executed to judge the targeted error. \\
+    \hline
+    Container execution timeout & 1 & The container exceeded the recorded 900-second limit, so the re-execution outcome was not available. \\
+    \hline
+    \textbf{Total} & \textbf{24} & \\
+    \hline
+  \end{tabular}
+  \caption{Breakdown of Docker application errors in the live-PyPI evaluation.
+  Categories use recorded trace fields rather than a post-hoc manual
+  attribution.}
+  \label{tab:v-application-errors}
+\end{table}
+
+The 24 \texttt{apply\_error} cases are retained as unresolved outcomes. They
+are not silently discarded, because a repository or container failure is
+material to a researcher who wants to reproduce a notebook. At the same time,
+they should not be interpreted as proof that the selected package was wrong:
+the notebook was not re-executed far enough to make that judgement. In
+particular, half of these cases arose from one Windows path-length limitation
+during repository checkout, rather than from the repair decision itself.
+\label{sec:v-final-infra}
+
+The main result is mixed but clear. The workflow can remove many targeted
+dependency errors and recover some notebooks end to end. It cannot guarantee
+full reproducibility, because a repair may expose another error, Docker may
+fail before validation, or the available evidence may not support a safe
+proposal.
+\label{sec:v-final-breakdown}
+\label{sec:v-final-interpretation}
+
+\subsection{Worked Evaluation Case}
+\label{sec:v-case-study}
+
+Record~198 illustrates a complete recovery and is traced step by step in
+\Cref{sec:m-worked-example}. The failure was caused by a NumPy API mismatch. In the installed version,
+the name \texttt{VisibleDeprecationWarning} was unavailable. The resolver
+verified five historically compatible NumPy versions and found the repository
+declaration \texttt{numpy >= 1.16.5} compatible with them. Gemma selected
+\texttt{numpy==1.24.1} from that verified list. Docker applied the pin and the
+notebook completed without a Round~2 error. This case demonstrates the full
+pipeline; it is an example, not evidence of the overall rate.
+
+\subsection{Checks of Classification and Resolution}
+\label{sec:v-final-subtype}
+
+The classifier was manually checked on a stratified 49-record sample before
+the final evaluation. Its binary repair-scope decision had 95.9\% accuracy
+(47/49), and its four-way subtype label matched the manual label for 45 of 49
+records (91.8\%). These are sample-level checks, not population estimates,
+because the sample deliberately includes the rarer excluded subtypes.
+\label{sec:v-final-classifier}
+
+The resolver was also manually inspected using representative import names.
+The final implementation does not rely on one static mapping table: it checks
+special mappings, name normalisation, and public mapping evidence, then verifies
+the resulting distribution against PyPI and wheel metadata. Its coverage still
+depends on the available package and wheel evidence. An abstention therefore
+means that the system did not have sufficient verified evidence, not that the
+notebook's error was necessarily impossible to repair.
+\label{sec:v-final-pypi}
+
+\section{LLM Model Sensitivity Analysis}
+\label{sec:v-model-sensitivity}
+
+RQ3 asks whether the final pipeline behaves similarly when its LLM is changed.
+Gemma-2~9B and Qwen3.6-35B-A3B-MLX-8bit were therefore run over the same 187
+records under the same frozen PyPI metadata and the same repair policy. The
+provider and serving environment differed, so this is a sensitivity check, not
+an isolated test of model architecture.
+
+Qwen returned valid structured explanations for 261 of 262 encountered errors,
+whereas Gemma returned 238 of 264 in the corresponding frozen-metadata run.
+Both configurations recovered three notebooks. Their targeted-error resolution
+rates were 92/150 (61.3\%) for Qwen and 96/152 (63.2\%) for Gemma. The small
+difference cannot be assigned to the models alone because their providers and
+two Docker outcomes also differed. The result supports the narrower conclusion
+that the grounded repair process can operate with both configurations; it does
+not establish that either model is generally better.
+
+
+\section{PLLM-Style Baseline Comparison}
+\label{sec:v-pllm-comparison}
+
+PLLM~\cite{bartlett2025pllm} is the closest prior dependency-repair system.
+Its published implementation accepts one standalone Python file, creates its
+own execution image, and runs that file with Python. It does not parse or
+execute notebooks, check out repositories, or use the repository-specific
+Docker recipe used in this thesis. Running it unchanged on an \texttt{.ipynb}
+record would therefore change both the input and the starting environment. This
+is an interface limitation in the present setting, not a claim that PLLM is
+ineffective.
+
+For this reason, the comparison uses a \emph{notebook-adapted PLLM-style
+baseline}, not original PLLM. The baseline keeps the relevant PLLM loop. It
+uses the original PLLM module-link table to select a candidate PyPI
+distribution, asks the same Gemma-2 9B model for a package and version, and
+applies the proposal through the same Docker-based execution component. A newly
+exposed dependency error can start one further round.
+
+The baseline does not reuse this thesis's static import-to-distribution mapping,
+subtype gate, proposal-schema gate, grounding gate, explanation component, or
+RDF export. Those differences are deliberate: they are the repair-design
+choices being compared.
+
+Both methods processed the same 187 evaluation records with the same
+maximum of two rounds, Gemma-2 9B configuration, and Docker application
+component. Both used the same frozen PyPI release metadata, and neither could
+access live PyPI during the run. Freezing the metadata prevents a package
+release from becoming available to one method only because PyPI changed between
+runs.
+
+The thesis pipeline also used a fixed wheel-import index derived from the same
+snapshot to verify distribution-to-import relationships. The baseline did not
+use this index because it would change the method being compared. The snapshot
+and complete traces from both runs are retained with the evaluation artefacts.
+
+{\footnotesize
+  \setlength{\tabcolsep}{3pt}
+  \begin{center}
+  \begin{tabular}{|p{3.0cm}|p{4.3cm}|p{3.7cm}|}
+    \hline
+    \textbf{Aspect} & \textbf{Controlled in both conditions} & \textbf{Deliberately different} \\
+    \hline
+    Population and execution & Same 187 reserved notebook records, two-round limit, and Docker application component & None \\
+    \hline
+    Model and package releases & Same Gemma-2 9B configuration and frozen PyPI release metadata & None \\
+    \hline
+    Distribution evidence & Both may query the shared frozen metadata & Thesis pipeline also verifies distribution-to-import evidence through its wheel-import index \\
+    \hline
+    Repair decision process & Both propose a package and version before Docker re-execution & Thesis pipeline uses subtype gating, resolver evidence, proposal-schema and grounding checks; the baseline retains the PLLM-style module-link loop \\
+    \hline
+  \end{tabular}
+  \captionof{table}{Design of the matched PLLM-style comparison. Controlled elements support a fair descriptive comparison; deliberately different elements are the methods being compared.}
+  \label{tab:v-pllm-comparability}
+  \end{center}
+}
+
+{\small
+\renewcommand{\arraystretch}{1.1}
+\begin{center}
+\begin{tabular}{|p{4.6cm}|p{3.35cm}|p{3.35cm}|}
+  \hline
+  \textbf{Metric} & \textbf{Thesis repair pipeline} &
+  \textbf{PLLM-style baseline} \\
+  \hline
+  Notebooks processed & 187 & 187 \\
+  \hline
+  Actual Docker repair attempts & 152 & 177 \\
+  \hline
+  Targeted errors resolved / actual attempts &
+  96/152 (63.2\%) & 94/177 (53.1\%) \\
+  \hline
+  Full notebook recoveries / all notebooks &
+  3/187 (1.6\%) & 6/187 (3.2\%) \\
+  \hline
+  Final abstentions & 103 & 67 \\
+  \hline
+  Final Docker application errors & 24 & 62 \\
+  \hline
+  Shared full-recovery notebooks & \multicolumn{2}{c|}{2} \\
+  \hline
+\end{tabular}
+\captionof{table}{Results of the matched notebook comparison. Targeted-error
+resolution is attempt-level: the error addressed by that attempt is no
+longer present after re-execution, even if a different error is exposed.
+Full recovery is notebook-level and always uses all 187 evaluation notebooks
+as its denominator.}
+\label{tab:v-pllm-comparison}
+\end{center}
+}
+
+The comparison is mixed. The PLLM-style baseline made 177 Docker repair
+attempts and fully recovered six notebooks. The thesis pipeline made 152
+attempts and fully recovered three notebooks. Two of those recoveries were
+shared by both methods; one was unique to the thesis pipeline and four were
+unique to the baseline.
+
+When the thesis pipeline made a Docker repair attempt, it removed the
+dependency error targeted by that attempt in 96 of 152 cases (63.2\%). The
+PLLM-style baseline did so in 94 of 177 cases (53.1\%). Thus, the baseline
+reached more complete notebook recoveries, whereas the thesis pipeline had a
+higher attempt-level targeted-error resolution rate. The thesis pipeline also
+abstained more often, while the baseline recorded more Docker application
+errors. These numbers describe different coverage and validation choices; they
+do not identify an overall winner.
+
+These results should be interpreted carefully. Each method was run only
+once, and the methods differ in several design decisions. For this reason,
+the comparison cannot show which individual component, such as the package
+mapping or proposal validation, caused a difference in the results. This 
+comparison also does not replace the earlier final evaluation with live
+PyPI data. It is a separate matched rerun with a shared frozen release
+snapshot, used only to prevent changes in PyPI over time from affecting one
+method but not the other.
+
+
+\iffalse
 \section{Human Evaluation of Explanation Quality}
 \label{sec:v-human-eval}
 
@@ -1599,11 +2060,17 @@ and 4 frequently.
 For each of the six items, the analysis reports the number of ratings,
 the median, the interquartile range (IQR), the full 1--5 frequency
 distribution, and the percentage of ratings of 4 or 5 (\%4--5). These
-statistics are computed overall, by subtype, and per explanation,
-exactly as planned before any response was collected. No inferential
+statistics are computed overall, by subtype, and per explanation. Medians and
+item-level distributions retain the ordinal character of individual
+Likert-type items~\cite{sullivan2013likert}. These summaries were specified
+before any response was collected. No inferential
 test is computed. Every statistic is produced by one analysis script
 directly from the raw survey exports, using functions that were written
 and unit-tested while the study was being designed.
+
+As a supplementary post-hoc check, Q6 is also grouped by the model's
+self-reported explanation confidence. This is a descriptive comparison,
+not a test of objective correctness or model-confidence calibration.
 
 Cronbach's alpha is reported as a supplementary internal-consistency
 statistic only. It describes whether the six items move together in the
@@ -1612,7 +2079,7 @@ it does not show that the six items measure a single construct, and it
 is not used to combine the items into one composite score. Item-level
 results remain the primary output.
 
-Five limitations bound what the results can show. First, the study is a
+Five limitations bound what the results can show. First, the initial study is a
 convenience sample of 15 participants, each rating 6 of 12 explanations.
 The 90 evaluations are clustered within 15 people, not 90 independent
 judgments, and the results describe this group and this pool, not
@@ -1620,14 +2087,16 @@ programmers or explanations in general. Second, participants judged a
 rendered error message and explanation, not the original notebook and
 its code. Third, the ratings measure perceived quality; Q6 in
 particular records whether an explanation struck a reader as correct,
-not whether it matches the notebook's true root cause. Fourth, no
-baseline or alternative explanation was shown, so the results describe
-this component in isolation. Fifth, the subtype comparison rests on 9
+not whether it matches the notebook's true root cause. Fourth, the initial
+study showed only LLM explanations. The separate blinded comparison in
+\Cref{sec:v-human-eval-comparison} adds a resolver-informed deterministic
+template, but uses a new small convenience sample and remains descriptive. It
+cannot show whether either explanation style is generally superior. Fifth, the subtype comparison rests on 9
 distinct \texttt{missing\_package} explanations against 3 distinct
 \texttt{wrong\_version} explanations, with 67 and 23 evaluations
 respectively, and is descriptive only. In addition, the study covers
-original-failure Gemma-2 9B explanations alone. The 50 Round-2
-explanations and the 237 Qwen explanations of
+original-failure Gemma-2 9B explanations alone. The Round-2
+explanations and the 262 Qwen explanations of
 \Cref{sec:v-final-explanation,sec:v-model-sensitivity} were evaluated
 automatically for completion and schema validity only, and no participant
 rated any of them. The broader
@@ -1717,6 +2186,24 @@ and each explanation appears in two variants.
   \label{tab:v-human-eval-subtype}
 \end{table}
 
+\paragraph{LLM self-reported confidence.}
+\label{sec:v-human-eval-confidence}
+As the supplementary check described in
+\Cref{sec:v-human-eval-analysis}, the nine explanations labelled
+\texttt{high} by Gemma received 67 Q6 ratings: their median was 5 and
+88.1\% were Agree or Strongly Agree. The three explanations labelled
+\texttt{medium} received 23 Q6 ratings: their median was also 5 and
+82.6\% were Agree or Strongly Agree. No selected explanation was labelled
+\texttt{low}.
+
+This does not establish that the model's confidence is calibrated. The nine
+\texttt{high} cases are all \texttt{missing\_package} errors, while the
+three \texttt{medium} cases are all \texttt{wrong\_version} errors.
+Confidence is therefore fully confounded with subtype, and the ratings are
+clustered within 12 explanations and 15 participants. The confidence field
+remains a logged self-assessment, not evidence that an explanation is
+correct.
+
 \paragraph{Qualitative feedback.} Five of the 15 participants answered at
 least one of the two free-text questions, giving six answers in total.
 Two themes recur. Several comments were unqualified positive assessments,
@@ -1743,14 +2230,234 @@ across items is about eight percentage points, so this ordering describes
 emphasis within a generally positive set of ratings rather than a sharp
 separation. The limitations of \Cref{sec:v-human-eval-limitations}
 apply: the ratings are perceived quality from a 15-participant
-convenience sample, with no alternative explanation method for
-comparison. Within those limits, the plain-language explanations
+convenience sample. Within those limits, the plain-language explanations
 LLMExplainer produced were understandable, useful, and perceived as
 correct by the readers in this study, with satisfaction the weakest item
 and the one the free-text feedback pointed at.
 
+\subsection{Blinded Comparison with a Resolver-Informed Template}
+\label{sec:v-human-eval-comparison}
+
+The initial study describes how readers judged LLM explanations on their own.
+It does not answer whether the same readers would judge them more favourably
+than a non-LLM alternative that uses the resolver evidence available to the
+pipeline. A separate blinded comparison therefore used four real errors: two
+\texttt{missing\_package} and two \texttt{wrong\_version} cases. For each
+case, the LLM condition showed the frozen, unedited Gemma explanation. The
+resolver-template condition showed a deterministic explanation built from the
+error and verified resolver evidence. For example, it identifies
+\texttt{scikit-learn} as the distribution that provides \texttt{sklearn}, or
+states the verified compatible version range for an unavailable import. It does
+not use an LLM or propose a repair.
+
+Each participant rated four explanations: two LLM explanations and two
+resolver-template explanations. The four survey variants assigned every error
+to both conditions across the sample, while ensuring that no participant saw
+two explanations of the same error. Fifteen participants completed every item.
+This gives 60 participant--explanation evaluations and 360 item ratings: 30
+evaluations and 180 item ratings in each condition. The realised variant counts
+were 4, 5, 4, and 2 participants for A--D. Thus, the two conditions are equal
+overall, although an individual error was seen by either seven or eight
+participants in a condition.
+
+Participants ranged from beginner to advanced or professional programmers.
+Five used Python regularly, seven had used it a little, and two had never used
+it; one participant did not answer this optional background question. The
+comparison used the same six questions and 1--5 scale as the initial study.
+The explanation method was not shown to participants. No submitted response
+had a missing rating. The results are descriptive: ratings are clustered within
+15 participants, and no significance test is used.
+
+\begin{table}[htbp]
+  \centering
+  \small
+  \setlength{\tabcolsep}{3pt}
+  \begin{tabular}{|p{5.35cm}|c|c|c|c|c|c|}
+    \hline
+    \textbf{Item} & \multicolumn{3}{c|}{\textbf{LLM explanation}} & \multicolumn{3}{c|}{\textbf{Resolver template}} \\
+    \cline{2-7}
+     & \textbf{Median} & \textbf{IQR} & \textbf{\%4--5} & \textbf{Median} & \textbf{IQR} & \textbf{\%4--5} \\
+    \hline
+    Q1. I understand why the notebook failed. & 4.5 & 1 & 76.7\% & 5 & 1 & 90.0\% \\
+    \hline
+    Q2. This explanation is satisfying. & 4 & 1 & 66.7\% & 4 & 1 & 80.0\% \\
+    \hline
+    Q3. This explanation has enough detail. & 4 & 1 & 80.0\% & 4 & 1 & 86.7\% \\
+    \hline
+    Q4. This explanation seems complete. & 3 & 1 & 46.7\% & 4 & 1 & 73.3\% \\
+    \hline
+    Q5. This explanation is useful for understanding what went wrong. & 4 & 1 & 83.3\% & 5 & 1 & 90.0\% \\
+    \hline
+    Q6. This explanation seems correct, based on the error shown. & 5 & 1 & 93.3\% & 5 & 1 & 100.0\% \\
+    \hline
+  \end{tabular}
+  \caption{Blinded descriptive comparison of 30 LLM and 30 resolver-template
+  explanation evaluations (15 participants, 4 evaluations each). Each cell
+  summarises 30 ratings for that item. \%4--5 is the share rated Agree or
+  Strongly Agree; it is not an independent-observation percentage.}
+  \label{tab:v-human-eval-comparison}
+\end{table}
+
+Across all six items, 86.7\% of resolver-template ratings and 74.4\% of LLM
+ratings were 4 or 5. The resolver template was rated more positively on every
+item. The largest descriptive difference was completeness: 73.3\% versus
+46.7\% ratings of 4 or 5. Perceived correctness was high in both conditions,
+but every resolver-template rating was 4 or 5. This is a measure of perceived,
+not objective, correctness.
+
+As a second descriptive view, each participant's ratings were averaged within
+condition. The mean of these participant-level averages was 4.40 for the
+resolver template and 4.06 for the LLM. Twelve participants had a higher
+resolver-template average, two had a higher LLM average, and one had equal
+averages. These values are not a statistical test: each participant rated
+different errors in the two conditions, and the sample is small.
+
+For these four errors and this convenience sample, the resolver-informed
+template was judged more favourably than the frozen LLM explanations. This does
+not show that deterministic explanations are generally better than LLM
+explanations, or identify which difference in wording or evidence caused the
+ratings. It does show that the LLM explanations did not outperform this stronger
+non-LLM alternative in the selected comparison.
+
+\fi
+
+\section{Human Evaluation of Explanation Quality}
+\label{sec:v-human-eval-current}
+\label{sec:v-human-eval}
+
+Automated checks can show that an explanation was returned in the expected
+structure. They cannot show whether a reader understands it. Two small,
+descriptive studies therefore evaluate reader-facing explanation quality. Both
+use six adapted items from the Explanation Satisfaction Scale
+\cite{hoffman2023measures}. Each item uses a five-point agreement scale. The
+items ask whether the reader understands why the notebook failed and whether
+the explanation is satisfying, detailed, complete, useful, and apparently
+correct. ``Apparently correct'' is perceived correctness; it is not an
+independent check of the notebook's true root cause.
+
+\subsection{Initial Study of LLM Explanations}
+\label{sec:v-human-eval-instrument}
+
+Fifteen participants rated six frozen Gemma explanations each, drawn from a
+pool of 12 original failures. This produced 90 participant--explanation
+evaluations and 540 item ratings. The study did not show repair outcomes,
+source code, or model confidence to participants. It is a convenience sample,
+so its results describe these readers and these examples rather than all
+programmers or all explanations.
+
+Participant background gives limited context for this convenience sample. Ten
+participants described their programming experience as intermediate, four as
+advanced or professional, and one as beginner. Seven used Python regularly,
+seven had used it a little, and one had never used it. Five reported frequent
+experience with dependency errors; the other ten reported occasional
+experience. These descriptions are not used for subgroup claims. They simply
+describe the readers represented by this study.
+
+\label{sec:v-human-eval-pool}
+\label{sec:v-human-eval-analysis}
+\label{sec:v-human-eval-limitations}
+
+Figure~\ref{fig:v-human-eval-likert} shows the full distribution of ratings
+for each item. Table~\ref{tab:v-human-eval-results-current} provides the
+corresponding median, spread, and positive-rating summary. Every median was at
+least 4. Between 84.4\% and 92.2\% of ratings per item were Agree or Strongly
+Agree. Taken together, 88.9\% of all ratings were in these two positive
+categories. These findings indicate that participants generally found the
+selected explanations understandable and useful, but they do not establish
+objective explanation correctness.
+
+\begin{table}[htbp]
+  \centering
+  \small
+  \begin{tabular}{|p{7.0cm}|c|c|c|}
+    \hline
+    \textbf{Item} & \textbf{Median} & \textbf{IQR} & \textbf{\%4--5} \\
+    \hline
+    Understand why the notebook failed & 5 & 1 & 92.2\% \\
+    \hline
+    Explanation is satisfying & 4 & 1 & 84.4\% \\
+    \hline
+    Explanation has enough detail & 5 & 1 & 91.1\% \\
+    \hline
+    Explanation seems complete & 4 & 1 & 91.1\% \\
+    \hline
+    Explanation is useful for understanding what went wrong & 5 & 1 & 87.8\% \\
+    \hline
+    Explanation seems correct, based on the error shown & 5 & 1 & 86.7\% \\
+    \hline
+  \end{tabular}
+  \caption{Initial LLM-only study: descriptive ratings from 90
+  participant--explanation evaluations. IQR is the interquartile range;
+  \%4--5 is the share rated Agree or Strongly Agree.}
+  \label{tab:v-human-eval-results-current}
+\end{table}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\textwidth]{human-eval-likert-distribution.png}
+  \caption{Distribution of participant ratings for the six explanation-quality
+  items, over all 90 explanation evaluations. The diverging layout places
+  disagreement to the left, agreement to the right, and neutral ratings around
+  the centre line.}
+  \label{fig:v-human-eval-likert}
+\end{figure}
+
+\label{sec:v-human-eval-results}
+\label{sec:v-human-eval-confidence}
+
+\subsection{Blinded Resolver-Informed Comparison}
+\label{sec:v-human-eval-comparison}
+
+The initial study does not compare the LLM explanation with a non-LLM
+alternative. A separate blinded study therefore compared frozen LLM
+explanations with deterministic templates that use the error message and
+verified resolver evidence. The template does not use an LLM and does not
+propose a repair. It states only what the available evidence supports.
+
+Fifteen participants each rated four explanations: two LLM and two resolver
+templates. Four real errors were used, with each error shown in both conditions
+across the study but never twice to the same participant. This produced 30
+evaluations per condition. The explanation method was hidden from participants.
+
+\begin{table}[htbp]
+  \centering
+  \small
+  \setlength{\tabcolsep}{3pt}
+  \begin{tabular}{|p{5.3cm}|c|c|c|c|}
+    \hline
+    \textbf{Item} & \multicolumn{2}{c|}{\textbf{LLM}} & \multicolumn{2}{c|}{\textbf{Resolver template}} \\
+    \cline{2-5}
+     & \textbf{Median} & \textbf{\%4--5} & \textbf{Median} & \textbf{\%4--5} \\
+    \hline
+    Understand why the notebook failed & 4.5 & 76.7\% & 5 & 90.0\% \\
+    \hline
+    Explanation is satisfying & 4 & 66.7\% & 4 & 80.0\% \\
+    \hline
+    Explanation has enough detail & 4 & 80.0\% & 4 & 86.7\% \\
+    \hline
+    Explanation seems complete & 3 & 46.7\% & 4 & 73.3\% \\
+    \hline
+    Explanation is useful & 4 & 83.3\% & 5 & 90.0\% \\
+    \hline
+    Explanation seems correct & 5 & 93.3\% & 5 & 100.0\% \\
+    \hline
+  \end{tabular}
+  \caption{Blinded descriptive comparison of 30 LLM and 30 resolver-template
+  evaluations. The template was rated more positively on all six items, but
+  the sample is small and the ratings are clustered within participants.}
+  \label{tab:v-human-eval-comparison-current}
+\end{table}
+
+Across all items, 86.7\% of resolver-template ratings and 74.4\% of LLM
+ratings were Agree or Strongly Agree. The largest difference concerned
+completeness. For these four errors and this convenience sample, the
+resolver-informed template was judged more favourably. This does not mean that
+deterministic explanations are generally better than LLM explanations; it shows
+that the frozen LLM explanations did not outperform this evidence-based
+alternative in this specific comparison.
+
+\iffalse
 \section{Threats to Validity}
-\label{sec:v-threats}
 
 This section collects the limitations that affect how the evaluation as a
 whole should be read. Each point is stated once, with a reference to the
@@ -1771,11 +2478,12 @@ section that discusses it in full.
     local, CPU-only Ollama; Qwen ran on a remote OpenAI-compatible endpoint
     with a larger output-token budget (\Cref{sec:v-model-sensitivity}).
     Serving hardware, latency, and queuing are therefore confounded with
-    model choice. Gemma's 27 explanation runtime failures against Qwen's
-    none are reported as a property of the serving setup, not as a
-    model-quality difference. The 13 notebooks with a different Round-1
-    version choice are the opposite case: the retrieval evidence was
-    identical, so that difference is attributed to the models.
+    model choice. Qwen had one unsuccessful explanation record, compared
+    with 26 for Gemma, but this is reported as a property of the serving
+    setup, not as a model-quality difference. The four different version
+    choices came from identical verified candidate lists. However, two
+    Docker outcomes also differed despite identical repair decisions, so
+    the small repair-rate difference cannot be attributed to the models.
   \item \textbf{Repositories were not commit-pinned.} FixApplicator could
     not reach its configured metadata database in the final evaluation
     environment, so every repository was cloned from its current default
@@ -1866,13 +2574,14 @@ concepts with the following qualifications.
     evaluation (\Cref{sec:v-model-sensitivity}). Their agreement describes
     these two models under this grounded design; other open or proprietary
     models could behave differently.
-  \item \textbf{The human study is small and narrow in scope.} It is a
-    convenience sample of 15 participants whose Python and Jupyter
-    experience ranged from none to regular use
-    (\Cref{sec:v-human-eval-results}), and it rated only the frozen pool of
-    Gemma original-failure explanations, not Round-2 or Qwen explanations
-    (\Cref{sec:v-human-eval-limitations}). Its ratings describe how this
-    group judged this pool, not how programmers in general would.
+  \item \textbf{The human studies are small and narrow in scope.} The initial
+    study and the blinded comparison each have 15 participants. Both are
+    convenience samples whose Python and Jupyter experience ranged from none
+    to regular use (\Cref{sec:v-human-eval-results,sec:v-human-eval-comparison}).
+    They cover only frozen Gemma explanations of original failures, not
+    Round-2 or Qwen explanations (\Cref{sec:v-human-eval-limitations}). Their
+    ratings describe how these groups judged these examples, not how
+    programmers in general would.
 \end{sloppypar}
 \end{itemize}
 
@@ -1890,23 +2599,24 @@ concepts with the following qualifications.
     percentages.
   \item \textbf{The Gemma/Qwen comparison is descriptive.} It compares two
     single runs of the same 187 notebooks (\Cref{sec:v-model-sensitivity})
-    without a significance test. The identical aggregates are consistent
-    with the grounding layer strongly constraining the available repair
-    choices, but they are not evidence that either model is generally
-    better, and the two need not agree where a candidate set leaves more
-    choice.
+    without a significance test. Their similar recovery count is consistent
+    with the grounding layer strongly constraining available repair choices,
+    but the differences in provider and Docker conditions mean that neither
+    run establishes one model as generally better.
   \item \textbf{The two-round cap bounds conclusions about longer repair
     chains.} \Cref{sec:v-case-study} shows a notebook that exposed a third
     dependency error after two successful targeted repairs. The evaluation
     shows that two rounds were not enough for such notebooks; it cannot
     say what a third round would have found, or whether further errors
     lay behind the third (\Cref{sec:m-fixapply-round2}).
-  \item \textbf{The human-study statistics are descriptive.} The 90
-    explanation evaluations come from 15 participants who each rated 6 of
-    12 examples, so the per-item percentages and Cronbach's alpha are
-    computed over ratings clustered within 15 people, not 90 independent
-    raters. The subtype comparison rests on 9 and 3 distinct examples
-    (\Cref{sec:v-human-eval-pool}), and no inferential claim is made.
+  \item \textbf{The human-study statistics are descriptive.} The initial
+    90 explanation evaluations come from 15 participants, and the separate
+    comparison has 60 evaluations from 15 participants. Ratings are clustered
+    within people, not independent observations. The initial subtype comparison
+    rests on 9 and 3 distinct examples (\Cref{sec:v-human-eval-pool}); the
+    resolver-informed comparison covers only four errors, with unequal realised
+    exposure for an individual error (\Cref{sec:v-human-eval-comparison}). No
+    inferential claim is made.
 \end{itemize}
 
 None of these points overturns the results reported in this chapter. They
@@ -1915,6 +2625,62 @@ mark the boundary of what the results can claim, so that
 
 \section{Chapter Summary}
 \label{sec:v-summary}
+
+\fi
+
+\section{Threats to Validity}
+\label{sec:v-threats}
+
+The results have four main boundaries. First, the evaluation uses one
+187-record split and one run for each configuration. Repeating a run could
+produce different LLM choices, Docker outcomes, or package metadata.
+
+Second, the pipeline covers only third-party Python dependency failures that
+can be repaired through PyPI and \texttt{pip}. It does not cover local files,
+Python standard-library errors, system libraries, or general notebook failures.
+
+Third, removing a targeted error is not the same as recovering a notebook. A
+repair can remove the first observed error and reveal another one. Docker
+application failures also remain unresolved, but they do not show whether the
+proposed package would have removed the target error.
+
+Fourth, the human studies are descriptive convenience samples of 15
+participants. They measure perceived explanation quality for selected examples,
+not objective correctness or population-wide preferences.
+
+The model-sensitivity and PLLM-style comparisons also have important limits.
+Their serving environments and several design choices differ, respectively.
+The comparisons identify observed trade-offs under their stated conditions; they
+do not prove that a particular model, baseline component, or explanation style
+is generally superior.
+\label{sec:v-threats-internal}
+\label{sec:v-threats-construct}
+\label{sec:v-threats-external}
+\label{sec:v-threats-conclusion}
+
+\section{Chapter Summary}
+\label{sec:v-summary-current}
+
+The component checks show that the resolver can verify package candidates
+against PyPI and wheel metadata, while Docker is used to judge whether a
+validated proposal actually works. In the 187-record live-PyPI evaluation,
+Gemma completed 180 original explanations and all 69 explanations of errors
+newly exposed after repair. Readers in the initial study generally rated the
+selected explanations positively. In the blinded comparison, the
+resolver-informed templates received higher ratings than the LLM explanations
+for the four selected errors; this is a descriptive result, not a general
+ranking of explanation methods.
+
+The workflow fully recovered five notebooks. It removed the targeted error in
+147 of 180 re-executed attempts, which is a more permissive measure than full
+recovery. A matched frozen-metadata comparison found that the PLLM-style
+baseline recovered more notebooks, while the thesis pipeline had the higher
+attempt-level targeted-error resolution rate. Qwen and Gemma produced similar
+repair results under the frozen sensitivity setup, although Qwen completed more
+structured explanations. Together, these results show both the practical value
+and the limits of evidence-grounded dependency repair.
+
+\iffalse
 
 This chapter reported several kinds of evidence, in increasing order of
 scale. The automated test suite (\Cref{sec:v-testing}, 711 tests) shows
@@ -1935,9 +2701,13 @@ split with a two-round budget. For RQ1, Gemma completed 160 of the 187
 original-failure explanations and all 50 explanations of newly exposed
 Round-2 errors; every one of the 210 completed responses was schema-valid,
 and the 27 missing records were timeouts and one service error of the local
-model service. The human study (\Cref{sec:v-human-eval}) adds the reader's
-view for the original-failure explanations: 15 participants, 540 ratings,
-88.9\% Agree or Strongly Agree, every item with a majority-agree median.
+model service. The human studies (\Cref{sec:v-human-eval}) add the reader's
+view for the original-failure explanations. The initial 15-participant study
+produced 540 ratings, 88.9\% Agree or Strongly Agree, with every item having a
+  majority-agree median. The separate 15-participant blinded comparison found
+  74.4\% Agree or Strongly Agree for LLM explanations and 86.7\% for
+  resolver-informed templates; this is descriptive evidence for the four
+  selected errors, not a general claim of superiority.
 For RQ2, the two levels of the repair result stay apart: 62 of the 73 real
 repair attempts (84.9\%) removed the error they targeted, while 0 of 187
 notebooks ran end to end. Every one of the 73 proposals the model produced
@@ -1952,18 +2722,24 @@ are reported separately in the final-outcome breakdown, while the
 infrastructure cases remain unresolved in the 73-attempt
 targeted-resolution denominator.
 
-For RQ3, \Cref{sec:v-model-sensitivity} repeated the evaluation with
-Qwen3.6-35B-A3B-MLX-8bit in place of Gemma-2 9B, with the pipeline held
-fixed and only model- and provider-specific serving settings changed.
-Every aggregate repair figure was identical. A notebook-by-notebook
-comparison found one structured difference, on 13 notebooks: both models
-pinned \texttt{numpy} from the same grounded candidate list, Gemma to
-1.26.3 and Qwen to 1.26.4, with no effect on installation, on the errors
-exposed next, on Round 2, or on any final classification. Qwen completed
-all 237 explanation records where Gemma completed 210. Because the model
-and its serving environment changed together, that difference is reported
-as an observation about the evaluation setup, not as evidence about model
-architecture.
+For RQ3, \Cref{sec:v-model-sensitivity} repeated the frozen-metadata
+evaluation with Qwen3.6-35B-A3B-MLX-8bit in place of Gemma-2 9B. Qwen
+produced 261 schema-valid explanations out of 262 encountered errors,
+compared with 238 out of 264 for Gemma. Both models recovered three
+notebooks. Their targeted-error-resolution rates were close (61.3\% for
+Qwen and 63.2\% for Gemma), but the two serving environments and two Docker
+outcomes differed. The comparison therefore describes these two
+configurations; it does not isolate a model-quality effect.
+
+\Cref{sec:v-pllm-comparison} then compared the thesis repair pipeline with
+a notebook-adapted PLLM-style baseline under a shared frozen PyPI metadata
+snapshot. This is not a direct execution of original PLLM. The baseline
+recovered 6 of 187 notebooks, while the thesis pipeline recovered 3 of 187;
+two notebooks were recovered by both methods. Conversely, the thesis pipeline
+removed the targeted error in 96 of 152 actual repair attempts (63.2\%),
+compared with 94 of 177 attempts (53.1\%) for the baseline. The comparison
+therefore shows different coverage--validation trade-offs, not an overall
+winner.
 
 The final Gemma run's \texttt{repair\_attempts} table, one row per
 repair-agent invocation of the full split, 235 in all, was also exported
@@ -1978,10 +2754,13 @@ loaded into the public FAIR Jupyter triple store.
 
 Two things this chapter does not show are worth naming. It does not report
 a repair success rate for the whole 214-row dataset, because 14 rows fall
-outside pip-only repair scope by design (\Cref{chap:problem-dataset}). And
-it does not compare the system against a baseline: a comparison against a
-non-grounded repair agent remains future work (\Cref{chap:future-work}).
+outside pip-only repair scope by design (\Cref{chap:problem-dataset}). It
+does compare the system with a PLLM-style baseline
+(\Cref{sec:v-pllm-comparison}), but it does not include an ungrounded
+ablation of this thesis's own repair agent. That separate comparison remains
+future work (\Cref{chap:future-work}).
 
 \Cref{sec:v-threats} states what this evaluation does and does not license
 concluding, across internal, construct, external, and conclusion validity,
 so the summary above is read with its boundaries attached.
+\fi

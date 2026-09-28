@@ -13,9 +13,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import llm_providers
-from pypi_retriever import load_rag_repair_config, retrieve
+from pypi_retriever import configure_pypi_client, load_package_mapping, load_rag_repair_config, retrieve
 from render_repair_prompt import render_repair_prompt
-from repair_proposal_validator import parse_and_validate_schema, validate_grounding
+from repair_proposal_validator import is_safe_token, parse_and_validate_schema, validate_grounding
 
 
 SUPPORTED_SUBTYPES = {"missing_package", "wrong_version"}
@@ -38,8 +38,15 @@ RETRIEVAL_STATUSES_REQUIRING_ABSTENTION = {
     "configuration_error",
     "package_not_found",
     "network_error",
+    "frozen_cache_miss",
     "invalid_response",
     "no_compatible_release",
+    "standard_library",
+    "local_import_path",
+    "classification_uncertain",
+    "import_not_provided",
+    "import_evidence_unavailable",
+    "date_evidence_unavailable",
 }
 
 
@@ -252,7 +259,13 @@ def _base_result(record: Dict[str, Any], run_id: str) -> Dict[str, Any]:
         "eligibility": None,
         "extracted_signature": None,
         "retrieval_result": None,
+        "declared_constraint": None,
         "llm": None,
+        "mapping_proposal": None,
+        "mapping_raw_response": None,
+        "mapping_schema_validation": None,
+        "mapping_verification": None,
+        "decision_source": None,
         "raw_response": None,
         "proposal": None,
         "schema_validation": None,
@@ -267,6 +280,112 @@ def _base_result(record: Dict[str, Any], run_id: str) -> Dict[str, Any]:
         "errors": [],
         "status": "abstained",
     }
+
+
+def _provider_settings(config: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    repair_agent_config = config.get("repair_agent", {})
+    provider = repair_agent_config.get("provider", "ollama")
+    provider_config = (
+        repair_agent_config.get("ollama", {})
+        if provider == "ollama"
+        else repair_agent_config.get("kiste", {})
+    )
+    return repair_agent_config, provider_config
+
+
+def _set_deterministic_result(
+    result: Dict[str, Any],
+    action: str,
+    install_name: str,
+    version: Optional[str],
+    rationale: str,
+    decision_source: str,
+) -> Dict[str, Any]:
+    argv = build_argv(action, install_name, version)
+    result["proposal"] = {
+        "action": action,
+        "install_name": install_name,
+        "version": version,
+        "rationale": rationale,
+    }
+    result["schema_validation"] = {"valid": True, "errors": []}
+    result["grounding_validation"] = {"valid": True, "errors": []}
+    result["final_action"] = action
+    result["final_install_name"] = install_name
+    result["final_version"] = version
+    result["final_rationale"] = rationale
+    result["argv"] = argv
+    result["command"] = build_command_display(argv)
+    result["decision_source"] = decision_source
+    result["status"] = "success"
+    return result
+
+
+def _render_distribution_mapping_prompt(
+    record: Dict[str, Any],
+    retrieval_result: Dict[str, Any],
+    declared_constraint: Optional[Dict[str, Any]],
+) -> str:
+    from render_repair_prompt import format_declared_constraint, format_value, render_prompt
+
+    template = Path("prompts/distribution_mapping_v2.txt").read_text(encoding="utf-8")
+    attempts = (retrieval_result.get("resolver") or {}).get("deterministic_attempts", [])
+    return render_prompt(template, {
+        "error_message": format_value(record.get("error_message")),
+        "failing_module": format_value(record.get("failing_module")),
+        "deterministic_attempts": json.dumps(attempts, sort_keys=True),
+        "declared_constraint": format_declared_constraint(declared_constraint),
+    })
+
+
+def _request_distribution_suggestion(
+    record: Dict[str, Any],
+    retrieval_result: Dict[str, Any],
+    declared_constraint: Optional[Dict[str, Any]],
+    repair_agent_config: Dict[str, Any],
+    provider_config: Dict[str, Any],
+) -> Tuple[Optional[Dict[str, Any]], Dict[str, Any]]:
+    """Ask the LLM for one name only; no repair action is accepted here."""
+    prompt = _render_distribution_mapping_prompt(record, retrieval_result, declared_constraint)
+    schema_path = "schemas/distribution_suggestion.schema.json"
+    audit: Dict[str, Any] = {
+        "role": "distribution_proposal",
+        "model": provider_config.get("model"),
+        "prompt_template": "distribution_mapping_v2",
+        "raw_response": None,
+        "schema_validation": None,
+        "errors": [],
+    }
+    try:
+        raw_response, _ = call_llm(
+            model=provider_config.get("model"),
+            prompt=prompt,
+            generation_config=provider_config,
+            repair_agent_config=repair_agent_config,
+        )
+        audit["raw_response"] = raw_response
+        valid, proposal, errors = parse_and_validate_schema(raw_response, schema_path)
+        audit["schema_validation"] = {"valid": valid, "errors": errors}
+        if not valid:
+            audit["errors"] = errors
+            return None, audit
+        suggestion = proposal.get("suggested_distribution")
+        if suggestion is None:
+            audit["errors"] = ["model abstained from suggesting a distribution"]
+            return None, audit
+        if not is_safe_token(suggestion):
+            audit["errors"] = ["suggested_distribution failed safe-token validation"]
+            return None, audit
+        return proposal, audit
+    except (TimeoutError, socket.timeout) as exc:
+        audit["errors"] = [f"timeout: {exc}"]
+        return None, audit
+    except urllib.error.URLError as exc:
+        audit["errors"] = [f"model_unavailable: {exc}"]
+        return None, audit
+    except Exception as exc:  # noqa: BLE001 - this path must fail closed
+        audit["errors"] = [f"runtime_error: {type(exc).__name__}: {exc}"]
+        return None, audit
 
 
 def run_repair_agent(
@@ -285,8 +404,10 @@ def run_repair_agent(
     produces exactly one result dict, representing one input record and one
     final decision, however many internal LLM attempts it took.
     """
+    configure_pypi_client(config)
     run_id = run_id or "i4-{}".format(datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
     result = _base_result(record, run_id)
+    repair_agent_config, provider_config = _provider_settings(config)
 
     # --- eligibility gate: zero retrieval/LLM calls unless "usable" ---
     decision, exclusion_reason = check_eligibility(record)
@@ -339,14 +460,85 @@ def run_repair_agent(
     # --- retrieval: production calls always pass python_version=None, so
     # retrieve() loads the authoritative constant from config/rag_repair.yaml
     # itself rather than this caller re-deriving or hardcoding it ---
+    resolver_config = config.get("resolver", {})
     retrieval_result = retrieve(
         import_name,
         python_version=None,
         subtype=subtype,
         module_path=module_path,
         symbol=symbol,
+        resolver_config=resolver_config,
+        repository_date=record.get("repository_commit_date"),
+        record=record,
     )
     result["retrieval_result"] = retrieval_result
+
+    # Only after special, identity/PEP-503, and the frozen public mapping
+    # have all failed may the LLM propose a distribution name.  The LLM's
+    # answer is then routed back through the identical PyPI + wheel check;
+    # no LLM text is ever itself mapping evidence.
+    decision_policy = repair_agent_config.get("decision_policy", {})
+    unresolved_import_policy = decision_policy.get(
+        "unresolved_import", "ollama_propose_then_verify"
+    )
+
+    if (
+        resolver_config.get("mode") == "v2"
+        and retrieval_result.get("status") == "mapping_unknown"
+        and unresolved_import_policy == "ollama_propose_then_verify"
+    ):
+        mapping_proposal, mapping_audit = _request_distribution_suggestion(
+            record,
+            retrieval_result,
+            declared_constraint=None,
+            repair_agent_config=repair_agent_config,
+            provider_config=provider_config,
+        )
+        result["mapping_proposal"] = mapping_proposal
+        result["mapping_raw_response"] = mapping_audit.get("raw_response")
+        result["mapping_schema_validation"] = mapping_audit.get("schema_validation")
+        result["llm"] = {
+            "model": provider_config.get("model"),
+            "role": "distribution_proposal",
+            "prompt_template": mapping_audit.get("prompt_template"),
+            "errors": mapping_audit.get("errors"),
+        }
+        if mapping_proposal is not None:
+            candidate_config = dict(resolver_config)
+            candidate_config["_v2_resolution_candidate"] = {
+                "distribution_name": mapping_proposal["suggested_distribution"],
+                "mapping_method": "llm_proposed_then_verified",
+            }
+            verification = retrieve(
+                import_name,
+                python_version=None,
+                subtype=subtype,
+                module_path=module_path,
+                symbol=symbol,
+                resolver_config=candidate_config,
+                repository_date=record.get("repository_commit_date"),
+                record=record,
+            )
+            result["mapping_verification"] = verification
+            if verification.get("status") == "resolved":
+                retrieval_result = verification
+                result["retrieval_result"] = retrieval_result
+            else:
+                result["errors"].append(
+                    "LLM distribution suggestion did not pass PyPI/wheel verification "
+                    f"(status: {verification.get('status')})"
+                )
+
+    if (
+        resolver_config.get("mode") == "v2"
+        and retrieval_result.get("status") == "mapping_unknown"
+        and unresolved_import_policy == "deterministic_abstain"
+    ):
+        result["decision_source"] = "deterministic_unresolved_import_abstention"
+        result["errors"].append(
+            "no deterministic import-to-distribution mapping passed verification; "
+            "the deterministic policy abstains"
+        )
 
     if (
         retrieval_result["status"] in RETRIEVAL_STATUSES_REQUIRING_ABSTENTION
@@ -358,7 +550,7 @@ def run_repair_agent(
         result["status"] = "abstained"
         return result
 
-    if subtype == "wrong_version":
+    if subtype == "wrong_version" and resolver_config.get("mode") != "v2":
         compatibility_evidence = retrieval_result.get("compatibility_evidence") or {}
         if compatibility_evidence.get("status") != "resolved":
             result["errors"].append(
@@ -368,17 +560,80 @@ def run_repair_agent(
             result["status"] = "abstained"
             return result
 
+    # V2 records repository declarations after (not before) the resolver has
+    # verified the distribution. A requirements file is context only: it
+    # cannot create a mapping or replace PyPI/wheel evidence.
+    declared_constraint = None
+    if resolver_config.get("mode") == "v2":
+        from requirements_evidence import assess_declared_constraint
+
+        dependency_files = record.get("dependency_file_metadata")
+        if not isinstance(dependency_files, list):
+            prompt_context = record.get("prompt_context", {})
+            dependency_files = (
+                prompt_context.get("dependency_files", []) if isinstance(prompt_context, dict) else []
+            )
+        mapping_path = resolver_config.get("package_mapping_path")
+        declared_constraint = assess_declared_constraint(
+            dependency_files,
+            retrieval_result,
+            import_distribution_mapping=load_package_mapping(mapping_path),
+        )
+        result["declared_constraint"] = declared_constraint
+
+    # A verified missing distribution has exactly one safe pip action.
+    # There is no value in making a language model repeat that fact.
+    if resolver_config.get("mode") == "v2" and subtype == "missing_package":
+        return _set_deterministic_result(
+            result,
+            "install",
+            retrieval_result["distribution_name"],
+            None,
+            "The distribution and requested import were verified from PyPI wheel metadata.",
+            "deterministic_verified_install",
+        )
+
+    # One date-anchored version candidate likewise leaves no choice for the
+    # model.  Multiple candidates are intentionally left to the bounded LLM
+    # selection experiment below.
+    if (
+        resolver_config.get("mode") == "v2"
+        and subtype == "wrong_version"
+        and len(retrieval_result.get("candidate_versions") or []) == 1
+    ):
+        only_version = retrieval_result["candidate_versions"][0]["version"]
+        return _set_deterministic_result(
+            result,
+            "pin_version",
+            retrieval_result["distribution_name"],
+            only_version,
+            "The only verified version available by the recorded repository date was selected.",
+            "deterministic_single_verified_version",
+        )
+
+    # The deterministic-policy ablation removes the LLM's bounded version
+    # selection while preserving the same date-anchored, wheel-verified
+    # candidate list.  retrieve() orders candidates newest first.
+    if (
+        resolver_config.get("mode") == "v2"
+        and subtype == "wrong_version"
+        and len(retrieval_result.get("candidate_versions") or []) > 1
+        and decision_policy.get("wrong_version_multiple_candidates")
+        == "deterministic_newest_verified_candidate"
+    ):
+        selected_version = retrieval_result["candidate_versions"][0]["version"]
+        return _set_deterministic_result(
+            result,
+            "pin_version",
+            retrieval_result["distribution_name"],
+            selected_version,
+            "The newest version in the date-anchored, wheel-verified candidate list was selected deterministically.",
+            "deterministic_newest_verified_version",
+        )
+
     # --- from here on, grounded evidence exists: an LLM call is justified ---
-    repair_agent_config = config.get("repair_agent", {})
-    provider = repair_agent_config.get("provider", "ollama")
-    # provider_config carries whichever provider-specific settings apply
-    # (model/temperature/top_p/max_tokens/timeout_seconds, plus url for
-    # ollama or base_url for kiste) - selected once here so the rest of
-    # this function (and call_llm()) stays provider-agnostic. For the
-    # default "ollama" provider this is exactly `ollama_config` as before.
-    ollama_config = repair_agent_config.get("ollama", {})
-    kiste_config = repair_agent_config.get("kiste", {})
-    provider_config = ollama_config if provider == "ollama" else kiste_config
+    # In V2 this branch is only the bounded choice among multiple verified
+    # wrong-version candidates.  V1 retains its prior LLM behaviour.
     prompt_config = repair_agent_config.get("prompt", {})
     retry_config = repair_agent_config.get("retry", {})
     schema_path = repair_agent_config.get("output", {}).get(
@@ -387,10 +642,13 @@ def run_repair_agent(
 
     template_path = Path("prompts") / "{}.txt".format(prompt_config.get("template", "dependency_repair_v1"))
     template = template_path.read_text(encoding="utf-8")
-    prompt = render_repair_prompt(record, retrieval_result, subtype, template)
+    prompt = render_repair_prompt(
+        record, retrieval_result, subtype, template, declared_constraint=declared_constraint
+    )
 
     result["llm"] = {
         "model": provider_config.get("model"),
+        "role": "verified_version_selection" if resolver_config.get("mode") == "v2" else "repair_proposal",
         "prompt_template": prompt_config.get("template"),
         "prompt_version": prompt_config.get("version"),
     }
@@ -492,6 +750,11 @@ def run_repair_agent(
     result["final_rationale"] = proposal["rationale"]
     result["argv"] = argv
     result["command"] = build_command_display(argv)
+    result["decision_source"] = (
+        "llm_select_from_verified_versions"
+        if resolver_config.get("mode") == "v2"
+        else "llm_repair_proposal"
+    )
     result["status"] = "success" if action != "none" else "abstained"
 
     return result

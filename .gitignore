@@ -44,3 +44,21 @@ data/evaluation/*/raw/
 # path) - see config/fix_applicator.evaluation.example.yaml for the
 # committed, path-free template.
 config/fix_applicator.evaluation.local.yaml
+
+# Locally cloned third-party implementations used for compatibility checks
+# and baseline development. Their source revision is recorded in docs/.
+third_party/
+
+# Isolated runtime used only for the PLLM-style baseline development pilot.
+.venv-pllm-baseline/
+
+
+# Local-only editor, review, and machine-specific files
+.claude/
+tmp/
+*Zone.Identifier
+supervisor-review.pdf
+ai_config.py
+thesis/$outputDir/
+config/fix_applicator.evaluation.wsl.yaml
+config/fix_applicator.v2.qwen.local.yaml

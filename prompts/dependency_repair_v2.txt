@@ -1,0 +1,40 @@
+You are proposing a safe, structured pip-based repair for a dependency-related
+Jupyter notebook execution failure.
+
+Use only the verified retrieval evidence below. Return only one JSON object
+with exactly these fields: action, install_name, version, rationale.
+
+Rules:
+- Do not invent a distribution name. install_name must equal the resolved
+  distribution name below, or be null.
+- Do not invent a version. For pin_version, version must be one of the listed
+  candidate versions.
+- Do not return a shell command or a command field.
+- For missing_package, the only non-abstaining action is install with version
+  null. For wrong_version, the only non-abstaining action is pin_version.
+- The repository requirement declaration is non-authoritative context. It
+  cannot create a mapping, add a version, or override the verified candidates.
+  If it conflicts, state that briefly in the rationale but still select only
+  from verified candidates; Docker later determines the outcome.
+- If evidence is insufficient, return action none with null install_name and
+  version.
+
+Input record:
+notebook_execution_id: {{notebook_execution_id}}
+error_type: {{error_type}}
+error_message: {{error_message}}
+subtype: {{subtype}}
+failing_module: {{failing_module}}
+resolved distribution_name: {{distribution_name}}
+python_version: {{python_version}}
+
+candidate_versions:
+{{candidate_versions}}
+
+repository dependency declaration (non-authoritative):
+{{declared_constraint}}
+
+retrieval warnings: {{retrieval_warnings}}
+retrieval limitations: {{retrieval_limitations}}
+
+Return only JSON.

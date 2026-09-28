@@ -1,0 +1,35 @@
+# Qwen configuration for the V2 model-sensitivity evaluation.
+# It is selected explicitly and never changes the Gemma/Ollama configuration.
+provider: kiste
+
+models:
+  primary: Qwen3.6-35B-A3B-MLX-8bit
+  fallback: null
+
+kiste:
+  base_url: "https://kiste.informatik.tu-chemnitz.de/v1"
+
+generation:
+  temperature: 0.1
+  top_p: 0.9
+  # Calibrated on development records to avoid Qwen truncation. This is
+  # recorded as a provider-specific setting in the resulting manifest.
+  max_tokens: 4096
+  timeout_seconds: 120
+
+retry:
+  max_retries: 1
+  retry_on:
+    - invalid_json
+    - schema_validation_error
+    - timeout
+    - model_unavailable
+
+prompt:
+  strategy: few_shot
+  template: dependency_explanation_v1
+  version: i3_prompt_v1
+
+output:
+  path: data/llm-explanations-v2-qwen/explanation_results.jsonl
+  schema: schemas/explanation.schema.json

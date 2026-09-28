@@ -229,6 +229,32 @@ def test_resolve_attempt_lookup_failure_does_not_raise():
     assert attempt["repository_commit"] is None
 
 
+def test_v2_resolve_attempt_skips_instead_of_using_default_branch_without_recorded_commit():
+    attempt = resolve_attempt(
+        _i4_success(),
+        {8: _i2_row()},
+        repository_metadata_lookup=lambda _repository_id: {},
+        require_recorded_commit=True,
+    )
+    assert attempt["decision"] == "skip"
+    assert attempt["skip_reason"] == "recorded_repository_commit_unavailable"
+
+
+def test_v2_resolve_attempt_prefers_commit_embedded_in_strict_dataset():
+    row = _i2_row() | {
+        "repository_commit": "pinned-commit",
+        "repository_setup_paths": ["setup.py"],
+        "dependency_file_metadata": [{"path": "requirements.txt", "fetched": True}],
+    }
+    attempt = resolve_attempt(
+        _i4_success(), {8: row}, repository_metadata_lookup=lambda _repository_id: {}, require_recorded_commit=True
+    )
+    assert attempt["decision"] == "execute"
+    assert attempt["repository_commit"] == "pinned-commit"
+    assert attempt["requirements_paths"] == ["requirements.txt"]
+    assert attempt["setup_paths"] == ["setup.py"]
+
+
 # --- commit_resolution_note: explain a missing commit, never mask it --------
 #
 # Real i7 pilot finding: an orchestrated Round 1 for notebook_execution_id=8

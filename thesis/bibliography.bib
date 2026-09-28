@@ -132,7 +132,7 @@
 }
 
 @inproceedings{szalontai2024codellama,
-  author    = {Szalontai, B. and others},
+  author    = {Szalontai, Balazs and Vadasz, Andras and Marton, Tamas and Pinter, Balazs and Gregorics, Tibor},
   title     = {Fine-Tuning {CodeLlama} to Fix Bugs},
   booktitle = {Proceedings of the International Conference on Recent
                Innovations in Computing (ICRIC)},
@@ -295,7 +295,7 @@
 }
 
 @article{dinh2024codeprompteval,
-  author    = {Dinh, T. and others},
+  author    = {Khojah, Ranim and Gomes de Oliveira Neto, Francisco and Mohamad, Mazen and Leitner, Philipp},
   title     = {The Impact of Prompt Programming on Function-Level Code
                Generation},
   journal   = {arXiv preprint arXiv:2412.20545},
@@ -313,7 +313,7 @@
 }
 
 @article{tao2025racg,
-  author    = {Tao, Yicheng and others},
+  author    = {Tao, Yicheng and Li, Yuante and Qin, Yao and Liu, Yepang},
   title     = {Retrieval-Augmented Code Generation: A Survey with Focus on
                Repository-Level Approaches},
   journal   = {arXiv preprint arXiv:2510.04905},
@@ -321,27 +321,26 @@
 }
 
 @article{wilkinson2016fair,
-  author    = {Wilkinson, Mark D. and Dumontier, Michel and
-               Aalbersberg, IJsbrand Jan and others},
+  author    = {Wilkinson, Mark D. and Dumontier, Michel and Aalbersberg, IJsbrand Jan and others},
   title     = {The {FAIR} Guiding Principles for Scientific Data Management
                and Stewardship},
   journal   = {Scientific Data},
   volume    = {3},
   pages     = {160018},
   year      = {2016},
-  doi       = {10.1038/sdata.2016.18}
+  doi       = {10.1038/sdata.2016.18},
+  url     = {https://doi.org/10.1038/sdata.2016.18}
 }
 
 @article{barker2022fair4rs,
-  author    = {Barker, Michelle and Chue Hong, Neil P. and Katz, Daniel S.
-               and Lamprecht, Anna-Lena and Martinez-Ortiz, Carlos and
-               Psomopoulos, Fotis and others},
+  author    = {Barker, Michelle and Chue Hong, Neil P. and Katz, Daniel S. and Lamprecht, Anna-Lena and Martinez-Ortiz, Carlos and Psomopoulos, Fotis and Harrow, Jennifer and Garcia Castro, Leyla Jael and Gruenpeter, Morane and Martinez, Paula Andrea and Honeyman, Tom},
   title     = {Introducing the {FAIR} Principles for Research Software},
   journal   = {Scientific Data},
   volume    = {9},
   pages     = {622},
   year      = {2022},
-  doi       = {10.1038/s41597-022-01710-x}
+  doi       = {10.1038/s41597-022-01710-x},
+  url     = {https://doi.org/10.1038/s41597-022-01710-x}
 }
 
 @misc{samuel2024zenodo,
@@ -351,6 +350,66 @@
   howpublished = {Zenodo dataset, \url{https://doi.org/10.5281/zenodo.8226725}},
   doi       = {10.5281/zenodo.8226725},
   year      = {2023}
+}
+
+% ---- Environment capture and large-scale re-execution --------------
+
+@inproceedings{forde2018repo2docker,
+  author    = {Forde, Jessica and Head, Tim and Holdgraf, Chris and
+               Panda, Yuvi and Nalvarte, Gladys and Pacer, Michael and
+               Perez, Fernando and Ragan-Kelley, Benjamin and Sundell, Erik},
+  title     = {Reproducible Research Environments with {repo2docker}},
+  booktitle = {Proceedings of the Reproducibility in Machine Learning Workshop
+               at {ICML} 2018},
+  year      = {2018},
+  url       = {https://openreview.net/forum?id=B1lYOwuoxm}
+}
+
+@inproceedings{jupyter2018binder,
+  author    = {{Project Jupyter} and Bussonnier, Matthias and Forde, Jessica
+               and Freeman, Jeremy and Granger, Brian and Head, Tim and
+               Holdgraf, Chris and Kelley, Kyle and Nalvarte, Gladys and
+               Osheroff, Andrew and Pacer, Michael and Panda, Yuvi and Perez,
+               Fernando and Ragan-Kelley, Benjamin and Willing, Carol},
+  title     = {Binder 2.0 -- Reproducible, Interactive, Sharable Environments
+               for Science at Scale},
+  booktitle = {Proceedings of the 17th Python in Science Conference},
+  pages     = {113--120},
+  year      = {2018},
+  doi       = {10.25080/MAJORA-4AF1F417-011}
+}
+
+@article{rampin2016reprozip,
+  author    = {Rampin, R{\'e}mi and Chirigati, Fernando and Shasha, Dennis
+               and Freire, Juliana and Steeves, Vicky},
+  title     = {{ReproZip}: The Reproducibility Packer},
+  journal   = {Journal of Open Source Software},
+  volume    = {1},
+  number    = {8},
+  pages     = {107},
+  year      = {2016},
+  doi       = {10.21105/joss.00107}
+}
+
+@article{cheifet2021codeocean,
+  author    = {Cheifet, Barbara},
+  title     = {Promoting Reproducibility with {Code Ocean}},
+  journal   = {Genome Biology},
+  volume    = {22},
+  pages     = {65},
+  year      = {2021},
+  doi       = {10.1186/s13059-021-02299-x}
+}
+
+@article{trisovic2022execution,
+  author    = {Trisovic, Ana and Lau, Matthew K. and Pasquier, Thomas and
+               Crosas, Merc{\`e}},
+  title     = {A Large-Scale Study on Research Code Quality and Execution},
+  journal   = {Scientific Data},
+  volume    = {9},
+  pages     = {60},
+  year      = {2022},
+  doi       = {10.1038/s41597-022-01143-6}
 }
 
 % ---- Human evaluation of LLMExplainer's explanations ---------------
@@ -379,4 +438,186 @@
   pages     = {193--198},
   year      = {2020},
   doi       = {10.1007/s13218-020-00636-z}
+}
+
+@misc{pep503,
+  author       = {{Python Packaging Authority}},
+  title        = {{PEP 503 -- Simple Repository API}},
+  howpublished = {Python Enhancement Proposal},
+  year         = {2015},
+  url          = {https://peps.python.org/pep-0503/},
+  note         = {Accessed: 2026-09-28}
+}
+
+@misc{pep691,
+  author       = {{Python Packaging Authority}},
+  title        = {{PEP 691 -- JSON-based Simple API for Python Package Indexes}},
+  howpublished = {Python Enhancement Proposal},
+  year         = {2022},
+  url          = {https://peps.python.org/pep-0691/},
+  note         = {Accessed: 2026-09-28}
+}
+
+@misc{pep427,
+  author       = {Holth, Daniel},
+  title        = {{PEP 427 -- The Wheel Binary Package Format 1.0}},
+  howpublished = {Python Enhancement Proposal},
+  year         = {2013},
+  url          = {https://peps.python.org/pep-0427/},
+  note         = {Accessed: 2026-09-28}
+}
+
+% ---- Sources added in response to supervisor bibliography review ----
+
+@inproceedings{becker2019errormessages,
+  author    = {Becker, Brett A. and Denny, Paul and Pettit, Raymond and Bouchard, Durell and Bouvier, Dennis J. and Harrington, Brian and Kamil, Amir and Karkare, Amey and McDonald, Chris and Osera, Peter-Michael and Pearce, Janice L. and Prather, James},
+  title     = {Compiler Error Messages Considered Unhelpful: The Landscape of Text-Based Programming Error Message Research},
+  booktitle = {2019 {ITiCSE} Working Group Reports},
+  publisher = {ACM},
+  year      = {2019},
+  doi       = {10.1145/3344429.3372508},
+  url       = {https://doi.org/10.1145/3344429.3372508}
+}
+
+@inproceedings{leinonen2023errormessages,
+  author    = {Leinonen, Juho and Hellas, Arto and Sarsa, Sami and Reeves, Brent and Denny, Paul and Prather, James and Becker, Brett A.},
+  title     = {Using Large Language Models to Enhance Programming Error Messages},
+  booktitle = {Proceedings of the 54th ACM Technical Symposium on Computer Science Education},
+  pages     = {563--569},
+  publisher = {ACM},
+  year      = {2023},
+  doi       = {10.1145/3545945.3569770},
+  url       = {https://doi.org/10.1145/3545945.3569770}
+}
+
+@article{bouzenia2025executionagent,
+  author  = {Bouzenia, Islem and Pradel, Michael},
+  title   = {You Name It, I Run It: An {LLM} Agent to Execute Tests of Arbitrary Projects},
+  journal = {Proceedings of the ACM on Software Engineering},
+  year    = {2025},
+  doi     = {10.1145/3728922},
+  url     = {https://doi.org/10.1145/3728922}
+}
+
+@misc{milliken2024installamatic,
+  author       = {Milliken, Louis and Kang, Sungmin and Yoo, Shin},
+  title        = {Beyond pip install: Evaluating {LLM} Agents for the Automated Installation of {Python} Projects},
+  howpublished = {arXiv preprint arXiv:2412.06294},
+  year         = {2024},
+  doi          = {10.48550/arXiv.2412.06294},
+  url          = {https://arxiv.org/abs/2412.06294}
+}
+
+@inproceedings{hu2025repo2run,
+  author    = {Hu, Ruida and Peng, Chao and Wang, Xinchen and Gao, Cuiyun},
+  title     = {{Repo2Run}: Automated Building Executable Environment for Code Repository at Scale},
+  booktitle = {Advances in Neural Information Processing Systems},
+  year      = {2025},
+  url       = {https://papers.nips.cc/paper_files/paper/2025/file/2f2b1d6bbd50865eca40e2774a057eef-Paper-Conference.pdf}
+}
+
+@misc{provone2016,
+  author       = {Cao, Yang and Jones, Christopher and Cuevas-Vicenttin, Victor and Jones, Matthew B. and Ludaescher, Bertram and McPhillips, Timothy and Missier, Paolo and Schwalm, Christopher and Slaughter, Peter and Vieglais, Dave and Walker, Lauren and Wei, Yaxing},
+  title        = {{ProvONE}: Extending {PROV} to Support the {DataONE} Scientific Community},
+  howpublished = {Provenance Week},
+  year         = {2016},
+  url          = {https://provenanceweek.org/2016/p3yl/papers/paper_82.pdf},
+  note         = {Accessed: 2026-09-28}
+}
+
+@inproceedings{noworkflow2014,
+  author    = {Murta, Leonardo and Braganholo, Vanessa and Freire, Juliana},
+  title     = {{noWorkflow}: Capturing and Analyzing Provenance of Scripts},
+  booktitle = {International Provenance and Annotation Workshop},
+  year      = {2014},
+  url       = {https://github.com/gems-uff/noworkflow/raw/master/docs/ipaw2014.pdf},
+  note      = {Accessed: 2026-09-28}
+}
+
+@article{rocrate2022,
+  author  = {Soiland-Reyes, Stian and Sefton, Peter and Crosas, Merce and Castro, Leyla Jael and Coppens, Frederik and Fernandez, Jose M. and Garijo, Daniel and Gruening, Bjoern and La Rosa, Marco and Leo, Simone and O Carragain, Eoghan and Portier, Marc and Trisovic, Ana and {RO-Crate Community} and Groth, Paul and Goble, Carole},
+  title   = {Packaging Research Artefacts with {RO-Crate}},
+  journal = {Data Science},
+  volume  = {5},
+  number  = {2},
+  year    = {2022},
+  doi     = {10.3233/DS-210053},
+  url     = {https://doi.org/10.3233/DS-210053}
+}
+
+@article{arenas2024morphkgc,
+  author  = {Arenas-Guerrero, Julian and Chaves-Fraga, David and Toledo, Jhon and Perez, Maria S. and Corcho, Oscar},
+  title   = {{Morph-KGC}: Scalable Knowledge Graph Materialization with Mapping Partitions},
+  journal = {Semantic Web},
+  volume  = {15},
+  number  = {1},
+  pages   = {1--20},
+  year    = {2024},
+  doi     = {10.3233/SW-223135},
+  url     = {https://doi.org/10.3233/SW-223135}
+}
+
+@inproceedings{dimou2014rml,
+  author    = {Dimou, Anastasia and Vander Sande, Miel and Colpaert, Pieter and Verborgh, Ruben and Mannens, Erik and de Walle, Rik},
+  title     = {{RML}: A Generic Language for Integrated {RDF} Mappings of Heterogeneous Data},
+  booktitle = {Proceedings of the 7th International Workshop on Linked Data on the Web},
+  series    = {CEUR Workshop Proceedings},
+  volume    = {1184},
+  year      = {2014},
+  url       = {https://ceur-ws.org/Vol-1184/ldow2014_paper_01.pdf}
+}
+
+@misc{dockerdocs,
+  author       = {{Docker, Inc.}},
+  title        = {Docker Documentation: What is Docker?},
+  howpublished = {Docker Docs},
+  year         = {2026},
+  url          = {https://docs.docker.com/get-started/docker-overview/},
+  note         = {Accessed: 2026-09-28}
+}
+
+@misc{ollama,
+  author       = {{Ollama}},
+  title        = {Ollama},
+  howpublished = {Software repository},
+  year         = {2026},
+  url          = {https://github.com/ollama/ollama},
+  note         = {Accessed: 2026-09-28}
+}
+
+@misc{gemmateam2024,
+  author       = {{Gemma Team}},
+  title        = {Gemma 2: Improving Open Language Models at a Practical Size},
+  howpublished = {arXiv preprint arXiv:2408.00118},
+  year         = {2024},
+  url          = {https://arxiv.org/abs/2408.00118}
+}
+
+@misc{qwenteam2025,
+  author       = {{Qwen Team}},
+  title        = {{Qwen3} Technical Report},
+  howpublished = {arXiv preprint arXiv:2505.09388},
+  year         = {2025},
+  url          = {https://arxiv.org/abs/2505.09388}
+}
+
+@article{sullivan2013likert,
+  author  = {Sullivan, Gail M. and Artino, Anthony R.},
+  title   = {Analyzing and Interpreting Data From Likert-Type Scales},
+  journal = {Journal of Graduate Medical Education},
+  volume  = {5},
+  number  = {4},
+  pages   = {541--542},
+  year    = {2013},
+  doi     = {10.4300/JGME-5-4-18},
+  url     = {https://doi.org/10.4300/JGME-5-4-18}
+}
+
+@misc{pipreqs,
+  author       = {{pipreqs Contributors}},
+  title        = {pipreqs: Generate requirements.txt Files from Imports},
+  howpublished = {Software repository},
+  year         = {2026},
+  url          = {https://github.com/bndr/pipreqs},
+  note         = {Accessed: 2026-09-28}
 }

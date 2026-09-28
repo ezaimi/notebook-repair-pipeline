@@ -234,3 +234,17 @@ i6 does not implement:
   feedback from a `still_failing` outcome back into RAGRepairAgent exists).
 
 These, along with the shared orchestration-level `run_id` noted in section 5, belong to i7.
+
+## 11. Full-scale materialisation of the final evaluation run (2026-09-20)
+
+Sections 9-10 describe the i6-era pilot. The same exporter and mapping, both unchanged, were later
+run over the complete `repair_attempts` table of the final Gemma evaluation run
+(`data/evaluation/i10-eval-gemma-round2-explanations-20260918T161356Z/raw/repair_attempts.sqlite`,
+235 rows: 187 Round 1 + 48 Round 2, of which 73 carry an executed fix application). Morph-KGC
+2.10.0 produced 3,478 triples: 235 `repr:RepairAttempt`/`prov:Activity` resources and 235
+`repr:hadRepairAttempt` links to 187 distinct notebook IRIs, all of which the unmodified upstream
+`notebooks.rml.ttl` independently produces as `rdf:type repr:Notebook` (627,127 triples). 24
+explicit checks against the SQLite table as ground truth all passed. The export, the triples
+(`.nt` and a prefixed `.ttl` re-serialisation), the Morph-KGC config and log, the check script, and
+the JSON report live in that run's `kg/` directory - see its `README.md`. Nothing was written into
+the external FAIR Jupyter checkout.

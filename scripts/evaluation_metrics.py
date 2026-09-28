@@ -460,6 +460,59 @@ def overall_grounded_proposal_coverage_rate(trace: List[Dict[str, Any]]) -> Opti
     return _rate(grounded, len(all_i4))
 
 
+# --- V2 repository-declaration diagnostics ---------------------------------
+
+DECLARED_CONSTRAINT_STATUSES = (
+    "declared_constraint_absent",
+    "declared_constraint_compatible",
+    "declared_constraint_conflict",
+    "declared_constraint_unparsable",
+)
+
+
+def declared_constraint_metrics(trace: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Describe V2 requirements-file evidence without turning it into a
+    repair-success metric.
+
+    Declarations are non-authoritative context. These counts make conflicts
+    visible, including the number that were still tested in Docker, but do
+    not imply that a declaration caused an outcome.
+    """
+    status_counts = {status: 0 for status in DECLARED_CONSTRAINT_STATUSES}
+    not_assessed = 0
+    conflict_docker_attempts = 0
+    conflict_fixed = 0
+
+    for diagnostics in trace:
+        for round_entry in diagnostics.get("rounds", []):
+            i4_result = round_entry.get("i4_result") or {}
+            evidence = i4_result.get("declared_constraint")
+            status = evidence.get("status") if isinstance(evidence, dict) else None
+            if status not in status_counts:
+                not_assessed += 1
+                continue
+            status_counts[status] += 1
+            if status == "declared_constraint_conflict":
+                i5_result = _real_attempt(round_entry)
+                if i5_result is not None:
+                    conflict_docker_attempts += 1
+                    if i5_result.get("outcome") == "fixed":
+                        conflict_fixed += 1
+
+    assessed = sum(status_counts.values())
+    return {
+        "assessed": assessed,
+        "not_assessed": not_assessed,
+        "status_counts": status_counts,
+        "conflict_docker_attempts": conflict_docker_attempts,
+        "conflict_fixed": conflict_fixed,
+        "note": (
+            "Requirement declarations are non-authoritative context. Conflict counts do not "
+            "attribute Docker outcomes to the declaration."
+        ),
+    }
+
+
 # --- explanation coverage ---------------------------------------------------
 #
 # Three explanation views, each with an explicit denominator (methodology
@@ -715,6 +768,7 @@ def compute_all_metrics(
         # repair metrics above: a Round-2 explanation call is never a
         # repair-agent invocation, and nothing here feeds any repair rate.
         "explanation": explanation_metrics(trace),
+        "repository_dependency_declarations": declared_constraint_metrics(trace),
         "failure_breakdown": failure_breakdown(records),
         "round2_summary": {
             "eligible": sum(1 for r in records if r["round2_eligible"]),

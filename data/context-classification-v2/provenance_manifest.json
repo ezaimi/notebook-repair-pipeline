@@ -1,0 +1,14 @@
+{
+  "commit_date_source": "GitHub commit patch Date header at exact recorded commit",
+  "created_at": "2026-09-24T22:24:56.441138+00:00",
+  "dependency_file_policy": "requirements files fetched only at exact recorded commit; no main/master fallback",
+  "input_path": "data\\context-classification\\dependency_error_contexts.jsonl",
+  "input_sha256": "fe1f0cf070c0f8b1c1cf4e9b02f76db7c8604dfd54cff496a7ca2a82300b646d",
+  "record_count": 214,
+  "repository_provenance_status_counts": {
+    "recorded_commit_and_date": 54,
+    "recorded_commit_date_unavailable": 1
+  },
+  "upstream_metadata_db_path": "\\\\wsl.localhost\\Ubuntu\\home\\zaimi\\era\\computational-reproducibility-pmc-docker\\data\\db\\db.sqlite",
+  "upstream_metadata_db_sha256": "ce049a7e5853a703f12b789e4dd2ef0f9d9b6d3cc7fbd88a237c7d963623a8a6"
+}

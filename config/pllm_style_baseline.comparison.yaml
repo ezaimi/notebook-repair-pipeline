@@ -1,0 +1,26 @@
+# Replacement comparison configuration after the first offline cache was
+# found to omit input imports absent from PLLM's module-link table. This
+# cache covers the checked table plus all deterministic initial lookups for
+# the reserved evaluation split before any model call is made.
+baseline:
+  runtime_python_version: "3.10"
+  model:
+    url: "http://localhost:11434/api/generate"
+    name: "gemma2:9b"
+    temperature: 0.1
+    top_p: 0.9
+    max_tokens: 700
+    timeout_seconds: 300
+  reference_module_link: "third_party/fse-aiware-python-dependencies/tools/pllm/helpers/ref_files/module_link.json"
+  pypi:
+    base_url: "https://pypi.org/pypi"
+    cache_path: "data/pllm-style-baseline/shared-comparison-pypi-cache.json"
+    allow_network: false
+    candidate_version_limit: 12
+  repair:
+    max_rounds: 2
+    prompt_version: "pllm_style_notebook_v1"
+dataset:
+  i2_path: "data/context-classification/dependency_error_contexts.jsonl"
+output:
+  trace_directory: "data/pllm-style-baseline"

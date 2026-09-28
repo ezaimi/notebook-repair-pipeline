@@ -269,6 +269,19 @@ def test_build_row_with_i3_and_i5_present_uses_i5_for_outcome_fields():
     assert "warnings" in evidence
 
 
+def test_build_row_preserves_declared_constraint_separately_from_pypi_evidence():
+    i4 = i4_record_success()
+    i4["declared_constraint"] = {
+        "status": "declared_constraint_conflict",
+        "matching_declarations": [{"path": "requirements.txt", "line_number": 2}],
+    }
+
+    row = build_repair_attempt_row(i4, i2_row_usable(), None, i5_record_fixed(index=0))
+
+    assert json.loads(row["declared_constraint"])["status"] == "declared_constraint_conflict"
+    assert json.loads(row["pypi_evidence"])["distribution_name"] == "scikit-learn"
+
+
 def test_build_row_still_failing_carries_new_error(tmp_path):
     row = build_repair_attempt_row(
         i4_record_success(notebook_execution_id=174, install_name="scipy", version="1.13.1", action="pin_version"),

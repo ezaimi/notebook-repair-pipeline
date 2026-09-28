@@ -1,0 +1,59 @@
+{
+  "freeze_id": "pllm-style-pre-evaluation-freeze-20260922",
+  "created_at": "2026-09-22T20:16:00+02:00",
+  "status": "pre_evaluation_frozen",
+  "evaluation_processed": false,
+  "baseline": {
+    "name": "pllm_style_notebook_v1",
+    "kind": "notebook-adapted PLLM-style reimplementation",
+    "source_repository": "https://github.com/checkdgt/fse-aiware-python-dependencies",
+    "source_revision": "11b8e6e45cd0167070df1367e748e00bd67a9b0d",
+    "model": {
+      "provider": "Ollama",
+      "name": "gemma2:9b",
+      "artifact_digest": "ff02c3702f32",
+      "temperature": 0.1,
+      "top_p": 0.9,
+      "max_tokens": 700,
+      "timeout_seconds": 300
+    },
+    "repair_budget": 2,
+    "network_access_during_evaluation": false
+  },
+  "frozen_pypi_cache": {
+    "path": "data/pllm-style-baseline/frozen-pypi-cache.json",
+    "sha256": "e567d06a24ad8b50e7eee646be691c4a123046e07577446b7446438542edd401",
+    "entries": 85,
+    "resolved": 82,
+    "not_found": 3
+  },
+  "integrity": {
+    "baseline_config_sha256": "651ecfc9e57114365568afefa79091599212ad9c518901caed061cc217ca3eaa",
+    "baseline_script_sha256": "5979ba5d0066d0897e29c7125ee5e4e3681a525dd8cfd2d6ec4ba038d6733d0c",
+    "baseline_tests_sha256": "3c5c2b239560527614e02164dc04f77e743f38a3ac35acaf9f3cc0a3ce00ad46",
+    "protocol_sha256": "bbab07801e45dfcd756c0ba70fe2ffc56bf205b0798fec3a3b31f7f70e62371e",
+    "context_dataset_sha256": "fe1f0cf070c0f8b1c1cf4e9b02f76db7c8604dfd54cff496a7ca2a82300b646d",
+    "split_manifest_sha256": "890e9c83c15332a0311a22d691a661e19851adbe4ba04056042b5172aeac4ebf",
+    "pllm_module_link_sha256": "d7af9f58110e87ab21b20f79a54a1b3c5cfd2e9e6dd6cb110b057e8930f1a303",
+    "fix_applicator_config_sha256": "d02577b07824da27e37c81f5054503c0ac43c09d51ee2bb38aa0df6478724385",
+    "repository_metadata_db_sha256": "ce049a7e5853a703f12b789e4dd2ef0f9d9b6d3cc7fbd88a237c7d963623a8a6"
+  },
+  "validation": {
+    "development_pilot_run_id": "pllm-style-dev-pilot-20260922T172000Z",
+    "development_records_completed": 13,
+    "baseline_unit_tests": "9 passed",
+    "offline_cache_preflight": "85 distributions: 82 resolved, 3 not found, exit code 0"
+  },
+  "environment": {
+    "operating_system": "Windows 11 Pro 10.0.26200 x64",
+    "cpu": "Intel Core Ultra 7 155H",
+    "memory_bytes": 33630179328,
+    "docker_server": "28.5.2 linux/amd64",
+    "python_test_runtime": "3.13.7"
+  },
+  "required_before_comparison_interpretation": [
+    "Run the 187 evaluation records once with this baseline and write the required final-run artefacts.",
+    "Re-run the thesis repair layer under the same frozen evidence, repository metadata, model artifact, and execution configuration.",
+    "Compare paired notebook-level outcomes; do not compare against the earlier live-PyPI thesis run."
+  ]
+}

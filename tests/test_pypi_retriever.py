@@ -1,7 +1,9 @@
 import json
+import io
 import socket
 import sys
 import urllib.error
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -23,6 +25,18 @@ from pypi_retriever import (
 )
 
 
+V2_RESOLVER = {"mode": "v2"}
+
+
+def wheel_bytes(top_levels):
+    """Build a minimal wheel archive for metadata-only resolver tests."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("demo-1.0.dist-info/top_level.txt", "\n".join(top_levels) + "\n")
+        archive.writestr("demo-1.0.dist-info/RECORD", "demo/__init__.py,,\n")
+    return buffer.getvalue()
+
+
 @pytest.fixture(autouse=True)
 def _reset_pypi_cache(monkeypatch):
     """The in-memory fetch cache and the rate-limit clock are both
@@ -36,16 +50,49 @@ def _reset_pypi_cache(monkeypatch):
     its own monkeypatch.setattr(pypi_retriever.time, "sleep", ...) later in
     the same test, which simply layers on top.
     """
+    pypi_retriever.configure_pypi_client({})
     pypi_retriever.clear_pypi_cache()
     pypi_retriever.reset_pypi_rate_limiter()
     monkeypatch.setattr(pypi_retriever.time, "sleep", lambda seconds: None)
     yield
+    pypi_retriever.configure_pypi_client({})
     pypi_retriever.clear_pypi_cache()
     pypi_retriever.reset_pypi_rate_limiter()
 
 
 def test_resolve_known_import_returns_verified_distribution():
     assert resolve_distribution_name("sklearn") == "scikit-learn"
+
+
+def test_fetch_uses_frozen_raw_pypi_snapshot_without_network(tmp_path, monkeypatch):
+    cache_path = tmp_path / "snapshot.json"
+    cache_path.write_text(json.dumps({
+        "demo-project": {"payload": {"releases": {"1.0": [{
+            "filename": "demo_project-1.0-py3-none-any.whl",
+            "yanked": False,
+            "requires_python": ">=3.9",
+        }]}}}
+    }), encoding="utf-8")
+    pypi_retriever.configure_pypi_client({
+        "pypi_client": {"frozen_cache_path": str(cache_path), "allow_network": False}
+    })
+    monkeypatch.setattr(pypi_retriever.urllib.request, "urlopen", lambda *_args, **_kwargs: pytest.fail("network used"))
+
+    status, data = fetch_pypi_project("demo-project")
+
+    assert status == "ok"
+    assert data == {"files": [{"filename": "demo_project-1.0-py3-none-any.whl", "yanked": False, "requires-python": ">=3.9"}]}
+
+
+def test_fetch_reports_explicit_miss_when_frozen_snapshot_is_closed(tmp_path, monkeypatch):
+    cache_path = tmp_path / "snapshot.json"
+    cache_path.write_text("{}", encoding="utf-8")
+    pypi_retriever.configure_pypi_client({
+        "pypi_client": {"frozen_cache_path": str(cache_path), "allow_network": False}
+    })
+    monkeypatch.setattr(pypi_retriever.urllib.request, "urlopen", lambda *_args, **_kwargs: pytest.fail("network used"))
+
+    assert fetch_pypi_project("absent-project")[0] == "frozen_cache_miss"
 
 
 def test_resolve_is_case_sensitive():
@@ -805,6 +852,164 @@ def test_retrieve_resolved_path_returns_full_schema(monkeypatch):
         "latest_version", "candidate_versions", "compatibility_evidence",
         "source_endpoint", "retrieved_at", "warnings", "error",
     }
+
+
+# --- retrieve(): V2 evidence-based resolver ---------------------------------
+
+def test_v2_identity_pep503_resolution_requires_and_records_wheel_proof(monkeypatch):
+    simple_payload = {
+        "files": [{
+            "filename": "demo_pkg-1.0-py3-none-any.whl",
+            "yanked": False,
+            "requires-python": ">=3.10",
+            "url": "https://files.pythonhosted.org/packages/demo_pkg-1.0-py3-none-any.whl",
+        }]
+    }
+
+    def fake_urlopen(request, timeout=None):
+        if request.full_url.startswith("https://pypi.org/simple/demo-pkg/"):
+            return FakeResponse(json.dumps(simple_payload).encode("utf-8"))
+        if request.full_url.startswith("https://files.pythonhosted.org/"):
+            return FakeResponse(wheel_bytes(["demo_pkg"]))
+        raise AssertionError(f"unexpected URL: {request.full_url}")
+
+    monkeypatch.setattr(pypi_retriever.urllib.request, "urlopen", fake_urlopen)
+
+    result = retrieve("demo_pkg", python_version="3.10", resolver_config=V2_RESOLVER)
+
+    assert result["status"] == "resolved"
+    assert result["distribution_name"] == "demo_pkg"
+    assert result["resolver"]["mapping_method"] == "identity_pep503"
+    assert result["candidate_versions"][0]["import_verification"]["status"] == "verified"
+    assert result["candidate_versions"][0]["import_verification"]["top_level_imports"] == ["demo_pkg"]
+
+
+def test_v2_tries_frozen_public_mapping_after_identity_candidate_fails(monkeypatch, tmp_path):
+    public_mapping = tmp_path / "public-mapping.txt"
+    public_mapping.write_text("demo_pkg:real-demo-distribution\n", encoding="utf-8")
+    resolver_config = {"mode": "v2", "public_mapping_path": str(public_mapping)}
+
+    def fake_urlopen(request, timeout=None):
+        if request.full_url.startswith("https://pypi.org/simple/demo-pkg/"):
+            raise urllib.error.HTTPError(request.full_url, 404, "Not Found", None, None)
+        if request.full_url.startswith("https://pypi.org/simple/real-demo-distribution/"):
+            return FakeResponse(json.dumps({"files": [{
+                "filename": "real_demo_distribution-1.0-py3-none-any.whl",
+                "yanked": False,
+                "url": "https://files.pythonhosted.org/packages/real_demo_distribution-1.0-py3-none-any.whl",
+            }]}).encode("utf-8"))
+        if request.full_url.startswith("https://files.pythonhosted.org/"):
+            return FakeResponse(wheel_bytes(["demo_pkg"]))
+        raise AssertionError(f"unexpected URL: {request.full_url}")
+
+    monkeypatch.setattr(pypi_retriever.urllib.request, "urlopen", fake_urlopen)
+    result = retrieve("demo_pkg", python_version="3.10", resolver_config=resolver_config)
+
+    assert result["status"] == "resolved"
+    assert result["distribution_name"] == "real-demo-distribution"
+    assert result["resolver"]["mapping_method"] == "public_pipreqs_mapping"
+    assert [attempt["status"] for attempt in result["resolver"]["deterministic_attempts"]] == [
+        "package_not_found", "resolved"
+    ]
+
+
+def test_v2_rejects_project_when_its_wheel_does_not_provide_requested_import(monkeypatch):
+    simple_payload = {
+        "files": [{
+            "filename": "demo_pkg-1.0-py3-none-any.whl",
+            "yanked": False,
+            "url": "https://files.pythonhosted.org/packages/demo_pkg-1.0-py3-none-any.whl",
+        }]
+    }
+
+    def fake_urlopen(request, timeout=None):
+        if request.full_url.startswith("https://pypi.org/simple/"):
+            return FakeResponse(json.dumps(simple_payload).encode("utf-8"))
+        return FakeResponse(wheel_bytes(["different_import"]))
+
+    monkeypatch.setattr(pypi_retriever.urllib.request, "urlopen", fake_urlopen)
+
+    result = retrieve("demo_pkg", python_version="3.10", resolver_config=V2_RESOLVER)
+
+    # After every deterministic source fails the wheel check, V2 records one
+    # final unresolved-mapping status.  The per-candidate attempt retains the
+    # more specific import_not_provided evidence for an optional LLM fallback.
+    assert result["status"] == "mapping_unknown"
+    assert result["resolver"]["deterministic_attempts"][0]["status"] == "import_not_provided"
+    assert result["candidate_versions"] == []
+
+
+def test_v2_classifies_statistics_before_any_pypi_request(monkeypatch):
+    monkeypatch.setattr(
+        pypi_retriever.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: pytest.fail("standard library must not be looked up on PyPI"),
+    )
+
+    result = retrieve("statistics", python_version="3.10", resolver_config=V2_RESOLVER)
+
+    assert result["status"] == "standard_library"
+    assert result["resolver"]["scope"]["reason"] == "python_standard_library"
+
+
+def test_v2_wrong_version_filters_releases_to_repository_date_before_wheel_check(monkeypatch):
+    simple_payload = {
+        "files": [
+            {
+                "filename": "demo_pkg-2.0-py3-none-any.whl",
+                "yanked": False,
+                "upload-time": "2025-01-01T00:00:00+00:00",
+                "url": "https://files.pythonhosted.org/packages/demo_pkg-2.0-py3-none-any.whl",
+            },
+            {
+                "filename": "demo_pkg-1.0-py3-none-any.whl",
+                "yanked": False,
+                "upload-time": "2022-01-01T00:00:00+00:00",
+                "url": "https://files.pythonhosted.org/packages/demo_pkg-1.0-py3-none-any.whl",
+            },
+        ]
+    }
+
+    def fake_urlopen(request, timeout=None):
+        if request.full_url.startswith("https://pypi.org/simple/"):
+            return FakeResponse(json.dumps(simple_payload).encode("utf-8"))
+        assert "1.0" in request.full_url  # the 2025 release must never be inspected
+        return FakeResponse(wheel_bytes(["demo_pkg"]))
+
+    monkeypatch.setattr(pypi_retriever.urllib.request, "urlopen", fake_urlopen)
+
+    result = retrieve(
+        "demo_pkg",
+        python_version="3.10",
+        subtype="wrong_version",
+        module_path="demo_pkg.api",
+        symbol="old_symbol",
+        resolver_config=V2_RESOLVER,
+        repository_date="2023-06-01T00:00:00+00:00",
+    )
+
+    assert result["status"] == "resolved"
+    assert [candidate["version"] for candidate in result["candidate_versions"]] == ["1.0"]
+    assert result["compatibility_evidence"]["status"] == "date_anchored"
+
+
+def test_v2_wrong_version_abstains_without_repository_date(monkeypatch):
+    monkeypatch.setattr(
+        pypi_retriever.urllib.request,
+        "urlopen",
+        lambda request, timeout=None: FakeResponse(json.dumps({"files": []}).encode("utf-8")),
+    )
+
+    result = retrieve(
+        "demo_pkg",
+        python_version="3.10",
+        subtype="wrong_version",
+        module_path="demo_pkg.api",
+        symbol="old_symbol",
+        resolver_config=V2_RESOLVER,
+    )
+
+    assert result["status"] == "date_evidence_unavailable"
 
 
 def test_retrieve_package_not_found(monkeypatch):

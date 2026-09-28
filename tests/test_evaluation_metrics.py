@@ -587,3 +587,26 @@ def test_compute_all_metrics_round1_and_round2_abstention_counts_sum_to_final_st
     assert report["round2_summary"]["proposal_generated"] == 1
     assert report["round2_summary"]["fixed"] == 1
     assert report["round2_summary"]["non_attempt_reasons"] == {"abstained_mapping_unknown": 1}
+
+
+def test_declared_constraint_metrics_keep_conflicts_visible_without_claiming_causality():
+    conflict_i4 = make_i4()
+    conflict_i4["declared_constraint"] = {"status": "declared_constraint_conflict"}
+    compatible_i4 = make_i4()
+    compatible_i4["declared_constraint"] = {"status": "declared_constraint_compatible"}
+    trace = [
+        make_diagnostics(1, [make_round(1, conflict_i4, make_i5("fixed"), round2_trigger=not_triggered())]),
+        make_diagnostics(2, [make_round(1, compatible_i4, make_i5("still_failing"), round2_trigger=not_triggered())]),
+        make_diagnostics(3, [make_round(1, make_i4(), make_i5("fixed"), round2_trigger=not_triggered())]),
+    ]
+
+    metrics = em.declared_constraint_metrics(trace)
+    report = em.compute_all_metrics(trace, "v2-run", expected_record_count=3)
+
+    assert metrics["assessed"] == 2
+    assert metrics["not_assessed"] == 1
+    assert metrics["status_counts"]["declared_constraint_conflict"] == 1
+    assert metrics["conflict_docker_attempts"] == 1
+    assert metrics["conflict_fixed"] == 1
+    assert "do not attribute" in metrics["note"]
+    assert report["repository_dependency_declarations"] == metrics

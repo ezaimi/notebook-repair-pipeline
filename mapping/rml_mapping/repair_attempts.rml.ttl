@@ -26,7 +26,7 @@
 map:map_repair_attempts_000 rml:logicalSource map:source_000 ;
 	rdf:type rr:TriplesMap ;
 	rdfs:label "repair_attempts" ;
-	rr:predicateObjectMap map:pom_000, map:pom_001, map:pom_002, map:pom_003, map:pom_004, map:pom_005, map:pom_006, map:pom_007, map:pom_008, map:pom_009, map:pom_010, map:pom_011, map:pom_012, map:pom_013, map:pom_014, map:pom_015, map:pom_016, map:pom_017, map:pom_018 ;
+	rr:predicateObjectMap map:pom_000, map:pom_001, map:pom_002, map:pom_003, map:pom_004, map:pom_005, map:pom_006, map:pom_007, map:pom_008, map:pom_009, map:pom_010, map:pom_011, map:pom_012, map:pom_013, map:pom_014, map:pom_015, map:pom_016, map:pom_017, map:pom_018, map:pom_019 ;
 	rr:subjectMap map:s_000 .
 
 map:s_000 rdf:type rr:SubjectMap ;
@@ -121,6 +121,10 @@ map:om_018 rml:reference "created_at" ;
 	rr:datatype xsd:dateTime ;
 	rr:termType rr:Literal .
 
+map:om_019 rml:reference "declared_constraint" ;
+	rdf:type rr:ObjectMap ;
+	rr:termType rr:Literal .
+
 map:pm_000 rdf:type rr:PredicateMap ;
 	rr:constant rdf:type .
 
@@ -177,6 +181,9 @@ map:pm_017 rdf:type rr:PredicateMap ;
 
 map:pm_018 rdf:type rr:PredicateMap ;
 	rr:constant prov:endedAtTime .
+
+map:pm_019 rdf:type rr:PredicateMap ;
+	rr:constant repr:declaredConstraint .
 
 map:pom_000 rdf:type rr:PredicateObjectMap ;
 	rr:objectMap map:om_000 ;
@@ -254,6 +261,10 @@ map:pom_018 rdf:type rr:PredicateObjectMap ;
 	rr:objectMap map:om_018 ;
 	rr:predicateMap map:pm_018 .
 
+map:pom_019 rdf:type rr:PredicateObjectMap ;
+	rr:objectMap map:om_019 ;
+	rr:predicateMap map:pm_019 .
+
 # --- the link from the existing notebook to this repair attempt -------------
 #
 # Same CSV, a second independent TriplesMap: its subject template
@@ -267,22 +278,22 @@ map:pom_018 rdf:type rr:PredicateObjectMap ;
 map:map_notebook_repair_link_000 rml:logicalSource map:source_000 ;
 	rdf:type rr:TriplesMap ;
 	rdfs:label "notebook_repair_link" ;
-	rr:predicateObjectMap map:pom_019 ;
+	rr:predicateObjectMap map:pom_020 ;
 	rr:subjectMap map:s_001 .
 
 map:s_001 rdf:type rr:SubjectMap ;
 	rr:template "https://w3id.org/reproduceme/notebook_{notebook_id}" .
 
-map:om_019 rdf:type rr:ObjectMap ;
+map:om_020 rdf:type rr:ObjectMap ;
 	rr:template "https://w3id.org/reproduceme/repairattempt_{id}" ;
 	rr:termType rr:IRI .
 
-map:pm_019 rdf:type rr:PredicateMap ;
+map:pm_020 rdf:type rr:PredicateMap ;
 	rr:constant repr:hadRepairAttempt .
 
-map:pom_019 rdf:type rr:PredicateObjectMap ;
-	rr:objectMap map:om_019 ;
-	rr:predicateMap map:pm_019 .
+map:pom_020 rdf:type rr:PredicateObjectMap ;
+	rr:objectMap map:om_020 ;
+	rr:predicateMap map:pm_020 .
 
 map:rules_000 <http://rdfs.org/ns/void#exampleResource> map:map_repair_attempts_000, map:map_notebook_repair_link_000 ;
 	rdf:type <http://rdfs.org/ns/void#Dataset> .
