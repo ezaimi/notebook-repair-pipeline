@@ -1,0 +1,10 @@
+metric,value
+system_level_repair_success_rate,0.0
+round1_repair_success_rate,0.0
+final_repair_success_rate,0.0
+conditional_repair_success_rate,0.0
+method_only_success_rate,0.0
+infrastructure_failure_rate,0.0106951871657754
+round1_abstention_rate,0.6737967914438503
+final_state_abstention_rate,0.8663101604278075
+note,"round1_abstention_rate counts only notebooks the repair agent declined on in Round 1. final_state_abstention_rate additionally counts notebooks that had a real Round-1 attempt (still_failing), became Round-2-eligible, and were declined again in Round 2 - see table_5's abstained_from_round1/abstained_from_round2 rows and table_2's round2_abstained row for that breakdown."

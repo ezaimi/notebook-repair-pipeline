@@ -33,6 +33,7 @@ def test_build_pipeline_argv_shape():
     assert "--limit" in argv and argv[argv.index("--limit") + 1] == "13"
     assert "--max-rounds" in argv and argv[argv.index("--max-rounds") + 1] == "2"
     assert "--run-id" in argv and argv[argv.index("--run-id") + 1] == "i8-dev-001"
+    assert "--i2" in argv and argv[argv.index("--i2") + 1] == em.DEFAULT_I2_PATH
     assert "--overwrite" not in argv
 
 
@@ -299,6 +300,7 @@ def test_run_evaluation_threads_fix_config_into_manifest_and_pipeline_argv(tmp_p
 
     argv = captured_argv["argv"]
     assert argv[argv.index("--fix-config") + 1] == "config/fix_applicator.evaluation.local.yaml"
+    assert argv[argv.index("--i2") + 1] == i2_relpath
 
 
 # --- --explainer-config / --repair-config CLI wiring (LLM model----------

@@ -311,6 +311,26 @@ def test_manifest_never_stores_kiste_token(tmp_path):
     assert ".env" not in json.dumps(em.DEFAULT_HASHED_PATHS)
 
 
+def test_v2_manifest_hashes_public_mapping_and_provenance_snapshot(tmp_path):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "data" / "public-import-mapping").mkdir(parents=True)
+    (tmp_path / "config" / "v2.yaml").write_text(
+        "resolver:\n"
+        "  public_mapping_path: data/public-import-mapping/mapping.txt\n"
+        "  public_mapping_provenance_path: data/public-import-mapping/provenance.json\n",
+        encoding="utf-8",
+    )
+    mapping = tmp_path / "data" / "public-import-mapping" / "mapping.txt"
+    provenance = tmp_path / "data" / "public-import-mapping" / "provenance.json"
+    mapping.write_text("demo: demo-project\n", encoding="utf-8")
+    provenance.write_text('{"source": "public"}\n', encoding="utf-8")
+
+    evidence = em.build_evidence_hashes(tmp_path, "config/v2.yaml")
+
+    assert evidence["public_import_mapping"]["sha256"] == em.hash_file(mapping)
+    assert evidence["public_import_mapping_provenance"]["sha256"] == em.hash_file(provenance)
+
+
 # --- consistency checking (resume) ---------------------------------------------
 
 def _base_manifest(**overrides):

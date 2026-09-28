@@ -1,0 +1,95 @@
+{
+  "run_id": "v2-shared-comparison-evaluation-20260926T001000Z",
+  "checks": [
+    {
+      "name": "expected_record_count",
+      "passed": true,
+      "detail": "expected=187 actual=187"
+    },
+    {
+      "name": "all_expected_ids_present",
+      "passed": true,
+      "detail": "missing=[] unexpected=[]"
+    },
+    {
+      "name": "no_silent_skips",
+      "passed": true,
+      "detail": "duplicate_trace_ids=[]"
+    },
+    {
+      "name": "no_duplicate_repair_attempts_rows",
+      "passed": true,
+      "detail": "duplicates=[]"
+    },
+    {
+      "name": "no_round_greater_than_two",
+      "passed": true,
+      "detail": "offending_notebook_execution_ids=[]"
+    },
+    {
+      "name": "every_round2_row_has_round1_row",
+      "passed": true,
+      "detail": "orphan_round2_notebook_execution_ids=[]"
+    },
+    {
+      "name": "round2_only_after_valid_trigger",
+      "passed": true,
+      "detail": "offending_notebook_execution_ids=[]"
+    },
+    {
+      "name": "single_run_id",
+      "passed": true,
+      "detail": "expected=v2-shared-comparison-evaluation-20260926T001000Z unexpected_trace_run_ids=[] unexpected_row_run_ids=[]"
+    },
+    {
+      "name": "no_excluded_records_in_evaluation_split",
+      "passed": true,
+      "detail": "offending_ids=[]"
+    },
+    {
+      "name": "no_dev_records_in_evaluation_split",
+      "passed": true,
+      "detail": "offending_ids=[]"
+    },
+    {
+      "name": "manifest_config_hash_consistency",
+      "passed": true,
+      "detail": "{}"
+    },
+    {
+      "name": "result_logger_row_reconciliation",
+      "passed": true,
+      "detail": "missing_rows=[] unexpected_rows=[]"
+    },
+    {
+      "name": "round2_explanations_well_formed",
+      "passed": true,
+      "detail": "offending=[]"
+    },
+    {
+      "name": "round2_entry_explanation_matches_trigger",
+      "passed": true,
+      "detail": "offending_notebook_execution_ids=[]"
+    },
+    {
+      "name": "no_round3_explanation",
+      "passed": true,
+      "detail": "offending=[]"
+    },
+    {
+      "name": "top_level_explanation_is_round1",
+      "passed": true,
+      "detail": "offending=[]"
+    },
+    {
+      "name": "non_repairable_round2_explanations_are_trace_only",
+      "passed": true,
+      "detail": "offending=[]"
+    },
+    {
+      "name": "round2_explanation_failure_did_not_block_repair",
+      "passed": true,
+      "detail": "offending_notebook_execution_ids=[]"
+    }
+  ]
+}

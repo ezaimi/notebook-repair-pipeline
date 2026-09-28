@@ -1,0 +1,8 @@
+metric,value
+scope_status_accuracy_on_49_record_manual_validation_sample,0.9591836734693877
+scope_status_precision_on_49_record_manual_validation_sample,0.9428571428571428
+scope_status_recall_on_49_record_manual_validation_sample,1.0
+scope_status_f1_on_49_record_manual_validation_sample,0.9705882352941176
+subtype_accuracy_on_49_record_manual_validation_sample,0.9183673469387755
+failing_module_exact_match_accuracy_on_49_record_manual_validation_sample,1.0
+population_wide_accuracy_estimate,"not reported - the validation sample deliberately oversamples rare subtypes, and no statistically valid design-based population estimator is implemented; see docs/i8-evaluation-methodology.md"

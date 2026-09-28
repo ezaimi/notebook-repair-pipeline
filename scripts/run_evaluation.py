@@ -79,6 +79,7 @@ def build_pipeline_argv(
     model: Optional[str] = None,
     prompt_strategy: Optional[str] = None,
     overwrite: bool = False,
+    i2_path: str = em.DEFAULT_I2_PATH,
 ) -> List[str]:
     """Pure argv construction for scripts/run_pipeline.py - fully testable
     without ever invoking a subprocess."""
@@ -105,6 +106,8 @@ def build_pipeline_argv(
         repair_config,
         "--fix-config",
         fix_config,
+        "--i2",
+        i2_path,
     ]
     if model:
         argv += ["--model", model]
@@ -150,6 +153,7 @@ def run_evaluation(
     repair_config: str = "config/rag_repair.yaml",
     fix_config: str = DEFAULT_FIX_CONFIG,
     repository_metadata_db_path: Optional[str] = DEFAULT_REPOSITORY_METADATA_DB_PATH,
+    database_path: Optional[str] = None,
     i2_path: str = em.DEFAULT_I2_PATH,
     root: Optional[Path] = None,
     python_executable: Optional[str] = None,
@@ -173,7 +177,7 @@ def run_evaluation(
 
     run_dir = evaluation_run_dir(root, run_id)
     raw_dir = run_dir / "raw"
-    database_path = str(raw_dir / "repair_attempts.sqlite")
+    database_path = database_path or str(raw_dir / "repair_attempts.sqlite")
     trace_output_dir = str(raw_dir / "pipeline-runs")
 
     manifest = em.build_manifest(
@@ -215,6 +219,7 @@ def run_evaluation(
         explainer_config=explainer_config,
         repair_config=repair_config,
         fix_config=fix_config,
+        i2_path=i2_path,
         model=model,
         prompt_strategy=prompt_strategy,
         overwrite=overwrite,
@@ -264,6 +269,11 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--i2-path",
+        default=em.DEFAULT_I2_PATH,
+        help="Commit/provenance-enriched i2 JSONL input used by both the manifest and I7 pipeline.",
+    )
+    parser.add_argument(
         "--repair-config",
         default="config/rag_repair.yaml",
         help=(
@@ -293,6 +303,15 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--database-path",
+        default=None,
+        help=(
+            "Optional SQLite path for repair attempts. Use a native local filesystem path when "
+            "the workspace itself is mounted through a network share; the trace and manifest "
+            "remain under data/evaluation/."
+        ),
+    )
+    parser.add_argument(
         "--i-understand-this-touches-the-reserved-split",
         dest="allow_evaluation_split",
         action="store_true",
@@ -314,6 +333,8 @@ def main() -> None:
             repair_config=args.repair_config,
             fix_config=args.fix_config,
             repository_metadata_db_path=args.repository_metadata_db_path,
+            database_path=args.database_path,
+            i2_path=args.i2_path,
             overwrite=args.overwrite,
             allow_evaluation_split=args.allow_evaluation_split,
         )

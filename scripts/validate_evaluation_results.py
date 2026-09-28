@@ -184,6 +184,20 @@ def check_manifest_hash_consistency(manifest: Dict[str, Any], root: Path) -> Che
         for name in current_hashes
         if current_hashes.get(name) != recorded_hashes.get(name)
     }
+    recorded_evidence_hashes = manifest.get("evidence_hashes")
+    if recorded_evidence_hashes is not None:
+        repair_config_path = config_paths.get("repair_config", "config/rag_repair.yaml")
+        current_evidence_hashes = em.build_evidence_hashes(root, repair_config_path)
+        if current_evidence_hashes != recorded_evidence_hashes:
+            mismatches["evidence_hashes"] = {
+                "recorded": recorded_evidence_hashes,
+                "current": current_evidence_hashes,
+            }
+    recorded_i2_hash = manifest.get("i2_sha256")
+    if recorded_i2_hash is not None:
+        current_i2_hash = em.hash_path(root / manifest.get("i2_path", em.DEFAULT_I2_PATH))
+        if current_i2_hash != recorded_i2_hash:
+            mismatches["i2_sha256"] = {"recorded": recorded_i2_hash, "current": current_i2_hash}
     # code_hashes (orchestrator/component source files) is a newer, optional
     # block: compared only when this manifest recorded it, so frozen I8/I9
     # manifests - which predate it - are checked exactly as before.

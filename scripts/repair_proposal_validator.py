@@ -248,9 +248,9 @@ def validate_grounding(
             )
 
         compatibility_evidence = retrieval_result.get("compatibility_evidence") or {}
-        if compatibility_evidence.get("status") != "resolved":
+        if compatibility_evidence.get("status") not in {"resolved", "date_anchored"}:
             errors.append(
-                "no resolved API-compatibility evidence backs this wrong_version proposal "
+                "no resolved API-compatibility or date-anchored evidence backs this wrong_version proposal "
                 f"(compatibility_evidence status: {compatibility_evidence.get('status')!r})"
             )
 

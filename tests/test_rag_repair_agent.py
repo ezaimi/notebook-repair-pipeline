@@ -171,6 +171,40 @@ def numpy_warning_record():
     }
 
 
+def test_v2_records_requirement_constraint_without_calling_llm_for_verified_missing_package(monkeypatch, config):
+    record = sklearn_record()
+    record["dependency_file_metadata"] = [{
+        "path": "requirements.txt",
+        "fetched": True,
+        "ref": "abc123",
+        "content": "scikit-learn<1.0\n",
+    }]
+    config["resolver"] = {"mode": "v2"}
+    config["repair_agent"]["prompt"] = {"template": "dependency_repair_v2", "version": "test"}
+    retrieval = {
+        "status": "resolved",
+        "distribution_name": "scikit-learn",
+        "python_version": "3.10",
+        "candidate_versions": [{"version": "1.7.2", "python_compatibility": "compatible"}],
+        "compatibility_evidence": None,
+        "warnings": [],
+    }
+    monkeypatch.setattr(rag_repair_agent, "retrieve", lambda *_args, **_kwargs: retrieval)
+
+    def fail_if_llm(*_args, **_kwargs):
+        raise AssertionError("a verified missing package must not call the LLM")
+
+    monkeypatch.setattr(rag_repair_agent, "call_llm", fail_if_llm)
+
+    result = run_repair_agent(record, config, run_id="v2-requirements-test")
+
+    assert result["status"] == "success"
+    assert result["declared_constraint"]["status"] == "declared_constraint_conflict"
+    assert result["final_action"] == "install"
+    assert result["decision_source"] == "deterministic_verified_install"
+    assert result["llm"] is None
+
+
 def system_library_record():
     return {
         "notebook_execution_id": 15,
@@ -494,6 +528,143 @@ def test_empty_candidate_set_abstains_without_llm_call(monkeypatch, config):
     assert result["status"] == "abstained"
     assert result["retrieval_result"]["status"] == "no_compatible_release"
     assert result["llm"] is None
+
+
+def test_v2_llm_distribution_suggestion_must_pass_retrieval_before_deterministic_install(monkeypatch, config):
+    record = sklearn_record()
+    config["resolver"] = {"mode": "v2"}
+    retrieval_calls = []
+
+    def fake_retrieve(*_args, **kwargs):
+        retrieval_calls.append(kwargs.get("resolver_config", {}))
+        forced = kwargs.get("resolver_config", {}).get("_v2_resolution_candidate")
+        if forced is None:
+            return {
+                "status": "mapping_unknown", "candidate_versions": [],
+                "resolver": {"deterministic_attempts": [{"distribution_name": "sklearn", "status": "package_not_found"}]},
+            }
+        assert forced["distribution_name"] == "real-sklearn-package"
+        assert forced["mapping_method"] == "llm_proposed_then_verified"
+        return {
+            "status": "resolved", "distribution_name": "real-sklearn-package", "python_version": "3.10",
+            "candidate_versions": [{"version": "1.0", "python_compatibility": "compatible"}],
+            "warnings": [], "compatibility_evidence": None,
+        }
+
+    monkeypatch.setattr(rag_repair_agent, "retrieve", fake_retrieve)
+    monkeypatch.setattr(
+        rag_repair_agent, "call_llm",
+        lambda **_kwargs: (json.dumps({
+            "suggested_distribution": "real-sklearn-package", "rationale": "known project name"
+        }), {}),
+    )
+
+    result = run_repair_agent(record, config, run_id="v2-llm-mapping")
+
+    assert len(retrieval_calls) == 2
+    assert result["status"] == "success"
+    assert result["final_action"] == "install"
+    assert result["decision_source"] == "deterministic_verified_install"
+    assert result["mapping_proposal"]["suggested_distribution"] == "real-sklearn-package"
+    assert result["mapping_verification"]["status"] == "resolved"
+
+
+def test_v2_llm_selects_only_among_multiple_verified_versions(monkeypatch, config):
+    record = cumtrapz_record()
+    record["repository_commit_date"] = "2023-06-01T00:00:00+00:00"
+    config["resolver"] = {"mode": "v2"}
+    retrieval = {
+        "status": "resolved", "distribution_name": "scipy", "python_version": "3.10",
+        "candidate_versions": [
+            {"version": "1.10.0", "python_compatibility": "compatible"},
+            {"version": "1.9.0", "python_compatibility": "compatible"},
+        ],
+        "compatibility_evidence": {"status": "date_anchored"}, "warnings": [],
+    }
+    monkeypatch.setattr(rag_repair_agent, "retrieve", lambda *_args, **_kwargs: retrieval)
+    monkeypatch.setattr(
+        rag_repair_agent, "call_llm",
+        lambda **_kwargs: (ollama_response("pin_version", "scipy", "1.9.0"), {}),
+    )
+
+    result = run_repair_agent(record, config, run_id="v2-version-choice")
+
+    assert result["status"] == "success"
+    assert result["final_version"] == "1.9.0"
+    assert result["decision_source"] == "llm_select_from_verified_versions"
+    assert result["llm"]["role"] == "verified_version_selection"
+
+
+def test_v2_deterministic_ablation_abstains_for_unmapped_import_without_llm(monkeypatch, config):
+    record = sklearn_record()
+    config["resolver"] = {"mode": "v2"}
+    config["repair_agent"]["decision_policy"] = {
+        "unresolved_import": "deterministic_abstain",
+    }
+    monkeypatch.setattr(
+        rag_repair_agent,
+        "retrieve",
+        lambda *_args, **_kwargs: {"status": "mapping_unknown", "candidate_versions": []},
+    )
+    monkeypatch.setattr(
+        rag_repair_agent,
+        "call_llm",
+        lambda **_kwargs: pytest.fail("deterministic ablation must not call the LLM"),
+    )
+
+    result = run_repair_agent(record, config, run_id="v2-deterministic-unmapped")
+
+    assert result["status"] == "abstained"
+    assert result["decision_source"] == "deterministic_unresolved_import_abstention"
+
+
+def test_v2_deterministic_ablation_selects_newest_verified_version_without_llm(monkeypatch, config):
+    record = cumtrapz_record()
+    record["repository_commit_date"] = "2023-06-01T00:00:00+00:00"
+    config["resolver"] = {"mode": "v2"}
+    config["repair_agent"]["decision_policy"] = {
+        "wrong_version_multiple_candidates": "deterministic_newest_verified_candidate",
+    }
+    monkeypatch.setattr(rag_repair_agent, "retrieve", lambda *_args, **_kwargs: {
+        "status": "resolved", "distribution_name": "scipy", "python_version": "3.10",
+        "candidate_versions": [
+            {"version": "1.10.0", "python_compatibility": "compatible"},
+            {"version": "1.9.0", "python_compatibility": "compatible"},
+        ],
+        "compatibility_evidence": {"status": "date_anchored"}, "warnings": [],
+    })
+    monkeypatch.setattr(
+        rag_repair_agent,
+        "call_llm",
+        lambda **_kwargs: pytest.fail("deterministic ablation must not call the LLM"),
+    )
+
+    result = run_repair_agent(record, config, run_id="v2-deterministic-version")
+
+    assert result["status"] == "success"
+    assert result["final_version"] == "1.10.0"
+    assert result["decision_source"] == "deterministic_newest_verified_version"
+
+
+def test_v2_one_verified_version_is_pinned_without_llm(monkeypatch, config):
+    record = cumtrapz_record()
+    record["repository_commit_date"] = "2023-06-01T00:00:00+00:00"
+    config["resolver"] = {"mode": "v2"}
+    monkeypatch.setattr(rag_repair_agent, "retrieve", lambda *_args, **_kwargs: {
+        "status": "resolved", "distribution_name": "scipy", "python_version": "3.10",
+        "candidate_versions": [{"version": "1.9.0", "python_compatibility": "compatible"}],
+        "compatibility_evidence": {"status": "date_anchored"}, "warnings": [],
+    })
+    monkeypatch.setattr(
+        rag_repair_agent, "call_llm",
+        lambda **_kwargs: pytest.fail("one verified version must be selected deterministically"),
+    )
+
+    result = run_repair_agent(record, config, run_id="v2-single-version")
+
+    assert result["status"] == "success"
+    assert result["final_version"] == "1.9.0"
+    assert result["decision_source"] == "deterministic_single_verified_version"
 
 
 # --- 6. retry behavior ---------------------------------------------------------

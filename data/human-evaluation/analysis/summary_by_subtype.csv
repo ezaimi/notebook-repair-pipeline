@@ -1,0 +1,13 @@
+subtype,item,n,median,iqr,pct_agree_or_strongly_agree
+missing_package,q1_understanding,67,5,1.0,92.53731343283582
+missing_package,q2_satisfaction,67,4,1.0,85.07462686567165
+missing_package,q3_detail,67,5,1.0,91.04477611940298
+missing_package,q4_completeness,67,4,1.0,91.04477611940298
+missing_package,q5_usefulness,67,5,1.0,89.55223880597015
+missing_package,q6_perceived_correctness,67,5,1.0,88.05970149253731
+wrong_version,q1_understanding,23,5,1.0,91.30434782608695
+wrong_version,q2_satisfaction,23,4,1.0,82.6086956521739
+wrong_version,q3_detail,23,4,1.0,91.30434782608695
+wrong_version,q4_completeness,23,4,1.0,91.30434782608695
+wrong_version,q5_usefulness,23,5,1.0,82.6086956521739
+wrong_version,q6_perceived_correctness,23,5,1.0,82.6086956521739

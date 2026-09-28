@@ -1,0 +1,48 @@
+# Deterministic-policy ablation for the V2 evaluation.  It uses the same
+# resolver, package evidence, prompt-independent repair rules, and Docker
+# validation as rag_repair.v2.yaml.  Only LLM decision points are removed.
+runtime:
+  python_version: "3.10"
+
+pypi_client:
+  rate_limit:
+    min_request_interval_seconds: 0.5
+    max_retries_on_429: 1
+    max_retry_after_seconds: 5.0
+
+resolver:
+  mode: v2
+  package_mapping_path: "config/package_mapping.v2.yaml"
+  public_mapping_path: "data/public-import-mapping/pipreqs-mapping.txt"
+  public_mapping_provenance_path: "data/public-import-mapping/pipreqs-mapping-provenance.json"
+  import_provision_evidence: "wheel_metadata"
+  wrong_version_policy: "repository_date_anchored"
+
+repair_agent:
+  provider: "ollama"
+  decision_policy:
+    missing_package: "deterministic_verified_install"
+    wrong_version_single_candidate: "deterministic_verified_pin"
+    wrong_version_multiple_candidates: "deterministic_newest_verified_candidate"
+    unresolved_import: "deterministic_abstain"
+  ollama:
+    url: "http://localhost:11434/api/generate"
+    model: "gemma2:9b"
+    temperature: 0.1
+    top_p: 0.9
+    max_tokens: 700
+    timeout_seconds: 300
+  prompt:
+    template: "dependency_repair_v2"
+    version: "v2_requirement_context"
+  retry:
+    max_retries: 1
+    retry_on:
+      - invalid_json
+      - schema_validation_error
+      - grounding_validation_error
+      - timeout
+      - model_unavailable
+  output:
+    path: "data/repair-proposals-v2-deterministic/repair_proposals.jsonl"
+    schema: "schemas/repair_proposal.schema.json"

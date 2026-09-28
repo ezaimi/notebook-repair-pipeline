@@ -10,80 +10,57 @@
 \chapter{System Architecture}
 \label{chap:architecture}
 
-This chapter specifies the design of the LLM-based repair layer that
-this thesis adds to the FAIR Jupyter reproducibility
-pipeline~\cite{samuel2024gigascience}. The existing pipeline ends at
-detecting and logging notebook execution failures. Even its
-containerised evolution~\cite{samuel2025docker} stops at the point of
-execution: it records the residual failure, but does not explain or
-repair it. The components described here attach at that point. They
-carry a dependency-related failure through explanation, repair,
-re-execution, and structured logging.
+This chapter describes the architecture of the automated explanation and
+repair workflow developed in this thesis. The workflow is separate from the
+FAIR Jupyter pipeline: it uses dependency-error records produced by the
+Docker-based FAIR Jupyter execution process as input, but it does not modify
+that upstream process. Starting from a recorded dependency failure, it
+classifies the error, explains it, derives a possible repair, re-executes the
+notebook in Docker, and records the outcome in a structured form.
 
-Following the taxonomy of Yang et al.~\cite{yang2025aprsurvey}, the
-repair layer is built as a \emph{procedural pipeline}, not an agentic
-framework: a fixed sequence of components, driven by a deterministic
-orchestrator. This choice is deliberate. Agentic loops achieve strong
-results on complex, multi-file bugs, but their latency and control
-overhead scale poorly across a batch of dependency-error notebooks. The
-interactive notebook-repair agents of Grotov et
-al.~\cite{grotov2024untangling,grotov2024debug} also assume a live
-kernel and a user in the loop -- neither is available in autonomous
-batch processing.
+The workflow is a \emph{procedural pipeline}: a deterministic orchestrator
+runs a fixed sequence of components in a defined order. This is suitable for
+batch processing because each decision and outcome can be recorded and
+checked. It differs from interactive notebook-repair approaches, which assume
+a live kernel and a user who can guide the repair process
+\cite{grotov2024untangling,grotov2024debug}.
 
-Five non-functional requirements shape the design, and are referred to by
-these labels throughout the thesis. Components rely only on open, locally
-deployable models (NFR1). Explanations are written in plain language for a
-non-expert reader (NFR2). Everything is documented and version-controlled
-to support traceability and reproducibility of a run (NFR3). The layer
-processes its full target set
-without manual intervention (NFR4). And components are modular, with an
-injected configuration surface rather than hard-coded settings (NFR5). One 
-functional requirement is also referred to by a label: FR1. It determines 
-whether a detected failure is a dependency error that falls within the system's 
-pip-based repair scope.
+When re-execution exposes a new eligible dependency error, the orchestrator
+permits one additional repair round. This two-round budget bounds the number
+of Docker re-executions; it does not claim to measure the maximum recovery
+possible with further rounds. Its implementation and limitation are discussed
+in \Cref{sec:m-orchestrator-round2}.
 
-The scope of this chapter is the \emph{contracts} between components and
-the \emph{data} they exchange. Prompt design, model selection, and the
-internals of the PyPI-grounded retrieval step belong to
-\Cref{sec:m-explanation,sec:m-repair}. How each component was actually
-built is the subject of \Cref{chap:methodology} as a whole.
+The LLM has limited roles in this workflow. It produces a plain-language
+explanation for each classified error. For repair, it may suggest one
+distribution name when deterministic matching cannot identify a package, and
+it may choose between several versions that have already been verified as
+candidates. A suggested distribution is accepted only after verification with
+PyPI and wheel-import evidence. Docker re-execution, not the LLM, determines
+whether a proposed repair worked.
+
+The architecture follows the functional and non-functional requirements
+defined in \Cref{tab:rw-requirements}, which provide the criteria used to
+design and assess the workflow.
+
+This chapter defines what each component receives, what it does, and what it
+passes to the next component. Prompt design, model configuration, PyPI
+retrieval, and implementation details are described in
+\Cref{chap:methodology}.
 
 % ---------------------------------------------------------------------
 \section{Design Overview}
 \label{sec:design-overview}
 
-The system can be stated in one sentence: \emph{when a notebook has
-failed because of a dependency error, read that failure, explain it in
-plain language, derive a fix from live PyPI data, apply the fix and
-re-run the notebook to check it, and record the result.} That sentence
-is partitioned into the five components of
-\Cref{tab:components-objectives}, each realising one thesis objective,
-sequenced by an orchestrator that realises pipeline integration (O5).
-
-\begin{table}[t]
-  \centering
-  \begin{tabular}{|l|>{\raggedright\arraybackslash}p{2.8cm}|>{\raggedright\arraybackslash}p{6.0cm}|}
-    \hline
-    \textbf{Component} & \textbf{Requirement}\newline\textbf{or objective} & \textbf{Responsibility} \\
-    \hline
-    ErrorClassifier  & FR1     & Classify the dependency failure, determine repair eligibility, and identify the failing module; also reclassify an error newly exposed by re-execution. \\
-    \hline
-    LLMExplainer     & O1      & Produce a plain-language explanation of each classified error, in Round 1 and for a newly exposed Round-2 error. \\
-    \hline
-    RAGRepairAgent   & O2      & Derive a concrete fix, grounded in live PyPI metadata, for a repair-eligible record. \\
-    \hline
-    FixApplicator    & O3      & Apply the fix and re-execute the notebook to validate it. \\
-    \hline
-    ResultLogger     & O4, O6  & Store repair attempts in SQLite and export them for knowledge-graph enrichment. \\
-    \hline
-    Orchestrator     & O5      & Sequence the five components; drive the bounded second round; expose the round and configuration switches. \\
-    \hline
-  \end{tabular}
-  \caption{The five repair components and the orchestrator, each mapped
-           to the requirement or objective it realises.}
-  \label{tab:components-objectives}
-\end{table}
+The workflow can be summarised as follows: when a notebook fails because of
+a dependency error, the system reads and classifies the recorded failure,
+generates a plain-language explanation, determines whether a supported repair
+can be proposed from verified package evidence, applies an approved repair,
+re-executes the notebook in Docker, and records the outcome. The workflow
+contains five components coordinated by an orchestrator. The relationship
+between the thesis objectives, workflow components, research questions, and
+evaluation evidence is given in \Cref{tab:intro-objectives}. The following
+sections explain how these components work together as one workflow.
 
 % ---------------------------------------------------------------------
 \section{Integration Point}
@@ -99,19 +76,28 @@ Docker container. It writes one row per execution to the
 \texttt{ImportError} to \texttt{DEPENDENCY\_ERROR}. The repair layer
 activates on exactly those rows: it performs a batch pass over the
 \texttt{notebook\_executions} rows whose \texttt{error\_category =
-DEPENDENCY\_ERROR}.
+DEPENDENCY\_ERROR}. The repair workflow reads these rows as input; it does
+not modify the upstream FAIR Jupyter execution process.
 \end{sloppypar}
 
-\paragraph{Re-execution substrate.}
-A candidate fix is validated by re-running the notebook from beginning to
-end inside a newly built Docker environment. The environment uses the
-same Python base image and installation procedure as the upstream Docker
-pipeline (\Cref{sec:m-fixapply-docker}). This reduces differences between
-the original and repaired executions. However, it does not reproduce the
-original environment exactly. The repository is cloned again when the
-repair is tested, and the final evaluation used its current default
-branch rather than the exact revision that originally failed
-(\Cref{sec:v-final-manifest}).
+\paragraph{Re-execution environment.}
+FixApplicator does not reopen the Docker container that produced the original
+failure, because that temporary container was not retained by the upstream
+execution process. Instead, for each approved repair, it clones the repository
+into a fresh working directory, checks out the commit recorded for that
+repository, and creates a new Docker build context. The resulting container
+uses the configured Python base image and follows the same general dependency
+installation procedure as the upstream Docker pipeline
+(\Cref{sec:m-fixapply-docker}). It installs the repository dependencies,
+applies the approved repair, and executes the notebook again from its first
+cell.
+
+This procedure reproduces the repository source revision used for the recorded
+failure, but it does not reproduce the historical environment exactly. The
+upstream execution did not retain a complete package inventory or the Docker
+image digest. Consequently, unpinned dependencies can still resolve
+differently when the repair is tested. Each repair trace records the repository
+commit and commit-checkout status so that this limitation remains visible.
 
 \begin{sloppypar}
 \paragraph{Context available at the hook-in point.}
@@ -125,10 +111,13 @@ layer. Additional context can be recovered when needed. A legacy execution table
 may provide a traceback, and the notebook source can be fetched again from
 GitHub (\Cref{sec:m-classification}). These sources are treated with lower
 confidence because they may not correspond exactly to the original failed
-execution. The original repository clone and container were not
-preserved. Therefore, when a repair is tested, FixApplicator clones the
-repository again and rebuilds the Docker environment
-(\Cref{sec:m-fixapply-docker}).
+execution. The original repository clone and Docker container were not
+preserved. FixApplicator therefore clones the repository again for repair
+validation. When a recorded repository commit is available, it checks out that
+exact revision before building the Docker environment. If no commit is
+available, this is explicitly recorded; if a recorded commit cannot be checked
+out, the attempt is reported as an infrastructure failure rather than silently
+tested against a different revision.
 \end{sloppypar}
 
 \paragraph{Working set.}
@@ -142,287 +131,192 @@ there and are not restated in this chapter.
 \section{Component Architecture}
 \label{sec:components}
 
-\begin{figure}[t]
+\begin{figure}[!ht]
   \centering
-  \resizebox{\textwidth}{!}{%
   \begin{tikzpicture}[
       font=\small,
-      comp/.style={draw, rounded corners, fill=blue!6, minimum width=2.2cm,
-                   minimum height=1cm, align=center, node distance=5mm},
-      ext/.style={draw, rounded corners, fill=gray!10, minimum width=2.2cm,
-                  minimum height=0.9cm, align=center, node distance=5mm},
-      gate/.style={draw, rounded corners, fill=yellow!12, minimum width=1.7cm,
-                   minimum height=1cm, align=center, node distance=5mm},
+      comp/.style={draw, rounded corners, fill=blue!6, text width=1.9cm,
+                   minimum height=9mm, align=center, inner sep=2pt,
+                   font=\scriptsize},
+      ext/.style={draw, rounded corners, fill=gray!10, text width=1.9cm,
+                  minimum height=8mm, align=center, inner sep=2pt,
+                  font=\scriptsize},
+      gate/.style={draw, rounded corners, fill=yellow!12, text width=1.55cm,
+                   minimum height=9mm, align=center, inner sep=2pt,
+                   font=\scriptsize},
+      note/.style={draw, rounded corners, fill=gray!5, text width=1.8cm,
+                   minimum height=7mm, align=center, font=\scriptsize,
+                   inner sep=2pt},
       arr/.style={-{Latex[length=2.2mm]}, thick},
       darr/.style={-{Latex[length=2.2mm]}, thick, dashed},
     ]
-    % five sequenced components, with the repair-eligibility gate between
-    % explanation and repair
+    % Top row: classify, explain, and decide whether repair is in scope.
     \node[comp] (ec) {ErrorClassifier};
-    \node[comp, right=of ec] (le) {LLMExplainer};
-    \node[gate, right=of le] (gate) {repair-\\eligible?};
-    \node[comp, right=of gate] (ra) {RAGRepairAgent};
-    \node[gate, right=of ra] (gate2) {grounded\\proposal?};
-    \node[comp, right=of gate2] (fa) {FixApplicator};
-    \node[comp, right=of fa] (rl) {ResultLogger};
+    \node[comp, right=4mm of ec] (le) {LLMExplainer};
+    \node[gate, right=4mm of le] (gate) {repair\\eligible?};
+    \node[note, right=4mm of gate] (excluded) {explain and log\\no repair};
 
-    % input above the chain
-    \node[ext, above=14mm of ec] (input) {Docker pipeline\\\texttt{notebook\_executions}\\(dependency-related failure)};
-    % PyPI above RAGRepairAgent
-    \node[ext, above=14mm of ra] (pypi) {PyPI\\(live metadata)};
-    % outputs below ResultLogger, clear of the feedback curve
-    \node[ext, below left=36mm and -12mm of rl] (sql) {SQLite\\\texttt{repair\_attempts}};
-    \node[ext, below right=36mm and -12mm of rl] (kg) {CSV export $\rightarrow$ RML\\$\rightarrow$ repair RDF linked to\\FAIR Jupyter KG notebook IRIs};
+    % Bottom row: verify a proposal, apply it, and record the outcome.
+    \node[comp, below=15mm of gate] (ra) {RAGRepair\\Agent};
+    \node[ext, left=4mm of ra] (pypi) {PyPI\\package evidence};
+    \node[gate, right=4mm of ra] (gate2) {grounded\\proposal?};
+    \node[comp, right=4mm of gate2] (fa) {FixApplicator\\apply and re-execute};
+    \node[comp, right=4mm of fa] (rl) {ResultLogger};
+    \node[note, below=6mm of gate2] (abstain) {abstain\\and log};
+    \node[draw, dashed, rounded corners, fill=gray!5, font=\scriptsize,
+          text width=2.6cm, align=center, right=4mm of excluded] (roundtwo)
+      {New in-scope error?\\Run Round~2 only};
+    \node[ext, below=5mm of rl] (sql) {SQLite\\\texttt{repair\_}\\\texttt{attempts}};
+    \node[ext, below=3mm of sql] (kg) {CSV export $\rightarrow$ RML\\repair RDF};
+    \node[ext, above=4mm of ec] (input)
+      {Docker pipeline\\dependency-error record};
 
     \draw[arr] (input) -- (ec);
     \draw[arr] (ec) -- (le);
     \draw[arr] (le) -- (gate);
-    \draw[arr] (gate) -- (ra) node[midway, above, font=\scriptsize] {yes};
+    \draw[arr] (gate) -- (ra)
+      node[midway, right, font=\scriptsize] {yes};
+    \draw[arr] (gate) -- (excluded)
+      node[midway, above, font=\scriptsize] {no};
     \draw[arr] (pypi) -- (ra);
     \draw[arr] (ra) -- (gate2);
-    \draw[arr] (gate2) -- (fa) node[midway, above, font=\scriptsize] {yes};
+    \draw[arr] (gate2) -- (fa)
+      node[midway, above=3mm, font=\scriptsize] {yes};
     \draw[arr] (fa) -- (rl);
     \draw[arr] (rl) -- (sql);
-    \draw[darr] (rl) -- (kg);
-
-    % not eligible: explanation only, no repair
-    \draw[arr] (gate.south) -- ++(0,-11mm)
-      node[right, align=left, font=\scriptsize, xshift=1mm, yshift=-1mm] {no: explained,\\not repaired};
-    % no grounded candidate: the agent abstains and the abstention is logged
-    \draw[arr] (gate2.south) -- ++(0,-11mm)
-      node[right, align=left, font=\scriptsize, xshift=1mm, yshift=-1mm] {no: abstain,\\log only};
-
-    % bounded second round: a newly exposed error re-enters at classification
-    \draw[darr] (fa.south) .. controls +(0,-36mm) and +(0,-36mm) .. (ec.south)
-      node[pos=0.5, below=1mm, align=center, font=\scriptsize]
-      {re-execution exposes a new error:\\
-       reclassify $\rightarrow$ explain $\rightarrow$ eligibility $\rightarrow$ repair only if eligible\\
-       (one bounded second round; two rounds in total)};
-
-    % orchestrator: dashed enclosure around the sequenced components
-    \node[draw, dashed, rounded corners, inner sep=5mm, fit=(ec)(le)(gate)(ra)(gate2)(fa)(rl)] (orch) {};
-    \node[font=\scriptsize, anchor=south] at (le.north |- orch.north)
-      {Orchestrator (sequences the components and drives the second round)};
+    \draw[darr] (sql) -- (kg);
+    \draw[arr] (gate2) -- (abstain)
+      node[midway, right, font=\scriptsize] {no};
+    \draw[darr] (fa.north east) to[out=45,in=-90] (roundtwo.south);
   \end{tikzpicture}%
-  }
-  \caption{Component architecture of the repair layer. A residual
-           dependency failure from the Docker pipeline enters at the left
-           and is classified and explained. It reaches RAGRepairAgent only
-           if it is repair-eligible, and FixApplicator only if the agent
-           could ground a proposal in retrieved PyPI evidence; otherwise
-           the agent abstains and the abstention is logged. The dashed
-           arrow is the bounded second round: an error newly exposed by
-           re-execution re-enters at ErrorClassifier, is explained as its
-           own record, and is repaired only if it is itself eligible.
-           Explanation never feeds into repair. Two rounds is the hard cap.
-           ResultLogger writes the SQLite table; the repair RDF is
-           generated from its CSV export by the RML mapping (dashed).}
+  \caption{Component architecture of the repair layer. The workflow
+           classifies and explains a recorded failure before deciding whether
+           a repair is eligible and sufficiently grounded. Excluded records
+           and abstentions are logged. Dashed paths represent the conditional
+           second round and RDF materialisation.}
   \label{fig:architecture-components}
 \end{figure}
+\FloatBarrier
 
-Each component is defined below by what it does, which
-\Cref{tab:components-objectives} already ties to a requirement or
-objective, and by its input/output contract. Implementation is deferred to
+\noindent
+\Cref{fig:architecture-components} shows the fixed control flow of the
+workflow. The orchestrator, rather than an autonomous LLM agent, determines
+which component runs next. The LLM produces explanations and has narrowly
+defined roles in repair decisions, while verified package evidence and Docker
+re-execution determine whether a repair may be proposed and whether it worked.
+
+Each component is defined below by what it does and by its input/output
+contract. Its relationship to the thesis objectives and evaluation evidence
+is given in \Cref{tab:intro-objectives}. Implementation is deferred to
 \Cref{chap:methodology}.
 
 \subsection{ErrorClassifier}
 \label{subsec:errorclassifier}
-\begin{sloppypar}
-ErrorClassifier decides whether a failure is an in-scope dependency error
-eligible for pip-based repair and, if so, extracts the failing module and
-its subtype.
-It reuses the pipeline's existing \texttt{error\_category} tag as a first
-filter and refines the decision from \texttt{error\_type} and
-\texttt{error\_message}. The same rules are applied a second time when
+ErrorClassifier determines whether a recorded failure is within the
+pip-based repair scope and extracts its failing module and subtype. It uses the
+upstream error category as an initial filter and applies the same decision when
 re-execution exposes a new error.\\
 \textbf{Input.} A \texttt{notebook\_executions} row (the fields listed in
 Section~\ref{sec:integration-point}), or, in the second round, the new
 error type and message that FixApplicator observed after re-execution.\\
 \textbf{Output.} A classification carrying three values:
 \texttt{failing\_module}, \texttt{subtype}, and \texttt{scope\_status}.
-For an original \texttt{DEPENDENCY\_ERROR} record the subtype is one of
-the four dependency-related values \texttt{missing\_package},
-\texttt{wrong\_version}, \texttt{system\_library}, or
-\texttt{mapping\_unknown}, and the scope status is \texttt{usable} or
-\texttt{excluded}. A newly exposed error is reclassified with the same
-rules; if it is not a dependency error at all (in the final evaluation, an
-\texttt{IndexError}), its subtype is \texttt{out\_of\_scope} and it is
-\texttt{excluded} from repair. It is still explained.
-\end{sloppypar}
-
-\textbf{Explanation is not gated by scope.} \texttt{scope\_status} decides
-whether RAGRepairAgent and FixApplicator run on a row, not whether
-LLMExplainer does. Every classified row, including an \texttt{excluded}
-one, is still passed to LLMExplainer, for the reason given in
-\Cref{sec:pd-explanation-scope}: a researcher whose failure falls outside
-the pip-only repair scope still deserves an explanation of what went wrong.
+\texttt{scope\_status} controls whether the repair components run, not
+whether the error is explained: excluded and out-of-scope failures are still
+sent to LLMExplainer. The subtype taxonomy and classification rules are given
+in \Cref{chap:problem-dataset,sec:m-classification}.
 
 \subsection{LLMExplainer}
 \label{subsec:llmexplainer}
 LLMExplainer generates a plain-language explanation of the classified
 error for a non-expert reader (NFR2).\\
-\textbf{Input.} One classified record: the error context (error type,
-message, failing module, relevant cell) of the original failure in Round 1,
-or of the newly exposed and reclassified error in Round 2.\\
-\textbf{Output.} A schema-validated explanation object and the identifier
-of the model that produced it (\texttt{model\_used}), forwarded to the
-ResultLogger for logging in the \texttt{explanation} and
-\texttt{llm\_model} columns of \texttt{repair\_attempts}.\\
-\textbf{Independence from repair.} The explanation is produced for the
-reader, not for the pipeline. RAGRepairAgent never receives it, and a
-failed explanation call does not stop an otherwise repair-eligible record
-from being repaired. This holds in both rounds.\\
-\emph{The prompt template and model are defined in
-\Cref{chap:methodology}; this component's contract is fixed here, its
-prompt internals are not.}
+\textbf{Input.} One classified record, including the error type, message,
+failing module, and available cell-level context.\\
+\textbf{Output.} A schema-validated explanation and the identifier of the
+model that produced it.\\
+The explanation is reader-facing: RAGRepairAgent does not receive it, and a
+failed explanation call does not prevent an otherwise eligible repair. Prompt
+and model settings are specified in \Cref{chap:methodology}.
 
 \subsection{RAGRepairAgent}
 \label{subsec:repairagent}
-RAGRepairAgent derives a concrete repair for a classified, repair-eligible
-error. Following PLLM~\cite{bartlett2025pllm}, the proposal is grounded in
-live PyPI data rather than relying only on the model's training
-knowledge.\\
-\textbf{Input.} The classified error record, including the error type and
-message, failing module, subtype, and root-cause hint, together with the
-PyPI evidence retrieved for the resolved package. In Round 2, the same
-contract is applied to the newly exposed and reclassified error.\\
+RAGRepairAgent makes the repair decision for a classified, repair-eligible
+error using verified package evidence.\\
+\textbf{Input.} The classified error record, configured package evidence, and
+any relevant repository dependency declaration.\\
 \textbf{Output.} A \emph{fix object} (Section~\ref{subsec:fix-object}), or
 an abstention when the available evidence is insufficient to support a
 repair.\\
-\emph{The retrieval process, version selection, use of compatibility
-evidence, and the decision not to use repository dependency declarations
-as repair evidence are described in \Cref{sec:m-repair}.}
+\textbf{Limited LLM role.} The LLM may propose one additional distribution
+when deterministic resolution cannot verify a candidate, or choose among
+already verified compatible versions. Every proposed repair must be verified
+before it is applied. A declaration such as \texttt{requirements.txt} is
+context, not proof that a distribution provides an import. The retrieval and
+verification procedure is specified in \Cref{sec:m-repair}.
 
 \subsection{FixApplicator}
 \label{subsec:fixapplicator}
-\begin{sloppypar}
 FixApplicator applies the validated repair inside a rebuilt Docker
 environment and re-executes the notebook to check whether the repair
-worked. The notebook is always run from the beginning, because notebook
-state can depend on earlier cells and a partial re-run would not provide a
-reliable validation~\cite{grotov2024debug}.\\
+worked. It always runs the notebook from its first cell.\\
 \textbf{Input.} A fix object together with the notebook and repository
-information needed to rebuild the execution environment. Repository
-dependency files such as \texttt{requirements.txt} and \texttt{setup.py},
-when available, are used during this reconstruction
-(\Cref{sec:m-fixapply-docker}). In Round 2, the rebuilt environment first
-reapplies the validated Round-1 fix before applying the Round-2 repair, so
-both fixes are tested together (\Cref{sec:m-fixapply-round2}).\\
+information needed to rebuild the execution environment.\\
 \textbf{Output.} An outcome
 $\in \{\texttt{fixed},\ \texttt{still\_failing},\ \texttt{apply\_error}\}$,
-together with the new error type and message when execution still fails,
-and an indication of whether the new error matches the one targeted by the
-repair.
-\end{sloppypar}
+with the new error type and message when execution still fails, and an
+indication of whether that error matches the one targeted by the repair.
+\texttt{fixed} means that the notebook completed from its first cell without
+an execution error. Docker reconstruction and Round-2 handling are described
+in \Cref{sec:m-fixapply-docker,sec:m-fixapply-round2}.
 
 \subsection{ResultLogger}
 \label{subsec:resultlogger}
-\begin{sloppypar}
 ResultLogger persists structured repair-attempt data. It is the source of
-the benchmark dataset (O4) and, through its CSV export, the input to the
-knowledge-graph mapping (O6); it does not write RDF itself.\\
+the evaluation dataset and the CSV input to the knowledge-graph mapping; it
+does not write RDF itself.\\
 \textbf{Input.} The classification, explanation, fix object, outcome, and
 run metadata of one repair-decision entry.\\
 \textbf{Output.} One \texttt{repair\_attempts} row per repair-decision
-entry (Section~\ref{subsec:repair-table}), whether the agent proposed a
-fix or abstained. Normally such an entry is a RAGRepairAgent invocation;
-an original out-of-scope record is represented by a synthesised abstention
-entry without an agent or model call. A Round-1 row carries the
-explanation of the original
-failure; a Round-2 row carries the explanation of the newly exposed error
-that round targeted. A CSV export of the table is the logical source of
-the RML mapping (Section~\ref{subsec:kg}), which was pilot-validated and
-then run, unchanged, over the complete table of the final evaluation
-(\Cref{sec:v-i6-fullscale}).\\
-\emph{How the four upstream outputs are joined into that single row is an
-implementation concern rather than a contract one, and is described in
-\Cref{sec:m-resultlogger}.}
-\end{sloppypar}
+entry, whether the workflow applies a fix, abstains, or excludes the record
+from repair. The record retains the explanation status in every case. Its CSV
+export is later used to materialise and structurally validate repair RDF.
+The logging schema and RDF process are described in
+\Cref{sec:m-resultlogger,subsec:kg}.
 
 % ---------------------------------------------------------------------
 \section{Orchestration and Control Flow}
 \label{sec:orchestrator}
 
-The orchestrator iterates over the target rows and runs the components in
-order: classify, explain, check repair eligibility, repair, apply, log. A
-repair-agent invocation does not always lead to a fix application: when
-retrieval cannot ground a candidate, RAGRepairAgent abstains, nothing is
-applied, and the abstention is logged as its own row. Three properties are
-fixed at this level.
-
-The orchestrator calls each of ErrorClassifier through ResultLogger
-through that component's own interface, rather than reimplementing any of
-them. It adds only two things of its own: the bounded second round
-described below, and a single run identifier shared by every call it makes
-for a given row.
+The orchestrator coordinates the components for each input record in a fixed
+order: classify, explain, decide whether repair is eligible, construct and
+validate a repair proposal, apply an approved repair, and log the result. It
+does not reimplement component logic. Its own responsibilities are to maintain
+a shared run identifier, isolate failures in individual records, and control
+the optional second repair round.
 
 \paragraph{The bounded second round.}
-The default is a single repair round. In two-round mode, a second round
-is considered when Round 1 reached FixApplicator, the notebook came back
-\texttt{still\_failing}, and the error it now fails on is a genuinely new
-one rather than the original error again. The new error is then treated as
-a record of its own and walks the same path as an original failure.
-ErrorClassifier reclassifies it. LLMExplainer explains it, so that the
-reader receives an account of every error the pipeline encountered, not
-only the first. Only then is repair eligibility evaluated: a newly exposed
-\texttt{missing\_package} or \texttt{wrong\_version} error proceeds to
-RAGRepairAgent and FixApplicator, while a newly exposed
-\texttt{system\_library}, \texttt{mapping\_unknown}, or non-dependency error
-is explained but not repaired. The explanation step is independent of the
-repair step in both directions: RAGRepairAgent never sees the explanation,
-and a failed explanation call does not prevent an eligible record from
-being repaired. The repair process stops after the second round.
-An error exposed by the Round-2 re-execution is recorded but is neither 
-reclassified, explained, nor repaired.
+A second round is considered only after FixApplicator has applied a Round-1
+repair and re-execution exposes a genuinely different, repair-eligible
+dependency error. That error is classified and explained as a new record
+before it receives a second repair decision. The Round-2 environment retains
+the approved Round-1 repair, so both repairs are tested together. No third
+repair round is started.
 
-This feedback structure follows the re-execution-based repair approach of
-ChatRepair~\cite{xia2024chatrepair}, but uses a fixed two-round budget
-instead of an open loop. The evaluation does not run separate one-round
-and two-round experiments. Instead, both outcomes are taken from the same
-two-round execution. This avoids introducing extra variation from the
-language model's non-zero sampling temperature. The Round-1 result is
-therefore kept unchanged, while Round 2 only extends it when a new eligible
-error is exposed. \Cref{chap:validation} compares the Round-1 outcome with
-the final outcome after up to two rounds.
+The two-round limit is a bounded engineering decision: it limits Docker
+re-execution cost and prevents an unbounded repair loop. It is not evidence
+that further rounds would not recover additional notebooks. The effect of a
+larger round budget remains future work (\Cref{sec:fw-coverage}).
 
 \paragraph{Failure isolation (NFR4).}
-Every attempt is logged, even when a component itself errors -- malformed
-LLM output, an unreachable PyPI, or a re-execution timeout. Such cases are
-caught and recorded with the appropriate \texttt{outcome}; a single
-problematic notebook never aborts the batch.
+Every record is handled independently. A component failure, such as malformed
+LLM output, unavailable package evidence, or a Docker timeout, is recorded
+for that record and does not abort the remaining batch.
 
 \paragraph{Configuration surface (NFR5).}
-The model, the prompt strategy, and the round count are injected per run
-rather than hard-coded, so they can be swapped without changing component
-code. The same injection points drive the model and prompt comparisons in
-the evaluation.
-
-\begin{verbatim}
-for row in notebook_executions with DEPENDENCY_ERROR:
-    rec  = ErrorClassifier(row)            # FR1: subtype, scope
-    expl = LLMExplainer(rec)               # O1: every record
-    if not rec.repair_eligible:         # explained, not repaired
-        stub = build_excluded_repair_stub(rec)   # no agent call
-        log(rec, expl, stub, None, round=1)
-        continue
-    fix = RAGRepairAgent(rec, PyPI)     # O2: proposal or abstain
-    out = FixApplicator(fix, env) if fix else None  # O3
-    log(rec, expl, fix, out, round=1)   # row even if abstained
-
-    if two_round and out == 'still_failing' and out.new_error:
-        rec2  = ErrorClassifier(out.new_error)   # reclassify
-        expl2 = LLMExplainer(rec2)               # explain, always
-        if not rec2.repair_eligible:
-            continue                  # trace only, no Round 2
-        fix2 = RAGRepairAgent(rec2, PyPI)
-        out2 = FixApplicator(fix2, env + fix) if fix2 else None
-        log(rec2, expl2, fix2, out2, round=2)  # cumulative env
-    # hard cap: no third round
-\end{verbatim}
-
-A failure inside \texttt{LLMExplainer} is caught and recorded as a failed
-explanation; it does not raise past the call, so the lines that follow it
-run regardless.
+The model, prompt strategy, package-evidence configuration, and round budget
+are supplied per run rather than hard-coded. The implementation of this
+control flow, including the exact Round-2 trigger and trace handling, is
+described in \Cref{sec:m-orchestrator-round2}.
 
 % ---------------------------------------------------------------------
 \section{Data Contracts}
@@ -432,32 +326,32 @@ run regardless.
 \label{subsec:fix-object}
 
 The RAGRepairAgent emits the \emph{proposed} fix as structured JSON,
-before application. Version~1 is pip-only: \texttt{action} is one of
+before application. The repair scope is pip-only: \texttt{action} is one of
 \texttt{install}, \texttt{pin\_version}, or \texttt{none}; \texttt{version}
 is \texttt{null} for a plain install; and \texttt{command} is exactly what
 the FixApplicator runs inside the container. Notebook-code edits
-(\texttt{replace\_import}) are deferred to future work -- in practice many
-renamed-import cases are still resolved by pinning an older version where
-the import was valid, which remains a pip fix.
+(such as \texttt{replace\_import}) are outside the scope of this thesis.
 
-The example below shows the object's meaningful content, not its literal
-persisted field names. The implemented record (\Cref{sec:m-repair}) carries
-the same four values -- action, resolved install name, version, and the
-evidence behind them -- but names and nests them differently.
+The example below is based on notebook-execution record~198 from the
+evaluation dataset. Its \texttt{ImportError} was repaired by selecting the
+verified version \texttt{numpy==1.24.1}. The listing presents the meaningful
+content of the fix object rather than every literal persisted field name.
+The implemented trace (\Cref{sec:m-repair}) also records the evidence and
+the relevant dependency declaration.
 
 \begin{verbatim}
 {
   "action": "pin_version",
-  "import_name": "scanpy",
-  "install_name": "scanpy",
-  "version": "1.9.3",
-  "command": "python -m pip install scanpy==1.9.3",
-  "rationale": "Notebook needs an API present only up to 1.9.x;
-                pinning the last compatible release.",
+  "import_name": "numpy",
+  "install_name": "numpy",
+  "version": "1.24.1",
+  "command": "python -m pip install numpy==1.24.1",
+  "rationale": "A verified compatible NumPy version was selected
+                for the recorded wrong-version error.",
   "pypi_evidence": {
-    "latest_version": "1.10.1",
-    "chosen_version": "1.9.3",
-    "requires_python": ">=3.9"
+    "chosen_version": "1.24.1",
+    "requested_import": "numpy",
+    "wheel_provides_import": true
   }
 }
 \end{verbatim}
@@ -465,35 +359,52 @@ evidence behind them -- but names and nests them differently.
 \subsection{The \texttt{repair\_attempts} Table}
 \label{subsec:repair-table}
 
-The repair layer writes to a single new SQLite table,
-\texttt{repair\_attempts}, which serves a dual purpose: it is the live
-validation log (O3) and the reusable benchmark dataset (O4). It records
-\emph{one row per repair-decision entry}: an abstention is a row with
-\texttt{action = none} and no outcome, a two-round repair produces two
-rows, and re-running the same targets under a different model or prompt
-produces further rows. Normally an entry corresponds to a RAGRepairAgent
-invocation. The one exception is an original record outside repair scope:
-it never reaches the agent, and the orchestrator records a synthesised
-abstention entry for it instead, so that every original record is
-represented (\Cref{sec:m-resultlogger-join}). In the
-final evaluation this gives 235 rows per
-run (187 Round-1 and 48 Round-2 invocations), of which 73 carry an
-executed fix application and its outcome. The error data is never copied
--- each row joins back to the
-originating failure via \texttt{notebook\_execution\_id}. Filtering on
-\texttt{round}, \texttt{llm\_model}, \texttt{prompt\_strategy}, and
-\texttt{run\_id} is what powers the ablation and the model/prompt
-comparisons.
+The repair layer stores its trace in one SQLite table named
+\texttt{repair\_attempts}. Each database row records one repair decision for
+one error and, where a repair is applied, the result of re-executing the
+notebook. The table is both the validation log for O3 and the reusable repair
+dataset for O4.
+
+There is one row for each repair decision. If the pipeline cannot justify a
+safe repair, it records \texttt{action = none}; because no command is run,
+the outcome is empty. If the first repair exposes a different eligible
+dependency error, the second-round decision is stored as a second row for
+the same original notebook execution. Records outside the repair scope also
+receive an abstention row, even though they do not reach the repair agent.
+Consequently, every original error is represented and some errors have more
+than one row. The error itself is not copied: \texttt{notebook\_execution\_id}
+links each row to the originating failure.
+
+The table also records the model, prompt strategy, round, and run identifier.
+These fields make it possible to distinguish results from different
+experimental configurations. Counts and outcomes are reported in
+\Cref{chap:validation}.
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{p{0.24\textwidth}p{0.67\textwidth}}
+\hline
+\textbf{Field group} & \textbf{Purpose} \\
+\hline
+Identity & \texttt{notebook\_execution\_id}, \texttt{failing\_module}, and \texttt{subtype} identify the failure being handled. \\
+Explanation and decision & \texttt{explanation}, \texttt{action}, \texttt{install\_name}, \texttt{version}, \texttt{command}, \texttt{rationale}, \texttt{pypi\_evidence}, and \texttt{declared\_constraint} record why a repair was, or was not, proposed. \\
+Validation & \texttt{outcome}, \texttt{new\_error\_type}, and \texttt{new\_error\_message} record what happened after application and re-execution. \\
+Run provenance & \texttt{llm\_model}, \texttt{prompt\_strategy}, \texttt{round}, \texttt{run\_id}, and \texttt{created\_at} identify the configuration and time of the decision. \\
+\hline
+\end{tabular}
+\caption{Purpose of the \texttt{repair\_attempts} fields.}
+\label{tab:repair-attempt-fields}
+\end{table}
 
 \begin{verbatim}
 CREATE TABLE repair_attempts (
   id                      INTEGER PRIMARY KEY,
   notebook_execution_id   INTEGER NOT NULL,
-                          -- FK -> notebook_executions
 
   -- from ErrorClassifier
   failing_module          TEXT,          -- e.g. "scanpy"
-  subtype                 TEXT,   -- missing_package | wrong_version
+  subtype                 TEXT,          -- classifier subtype
 
   -- from LLMExplainer (O1): this round's explanation
   explanation             TEXT,
@@ -505,6 +416,7 @@ CREATE TABLE repair_attempts (
   command                 TEXT,          -- exact command run
   rationale               TEXT,
   pypi_evidence           TEXT,   -- JSON retrieval evidence
+  declared_constraint     TEXT,   -- JSON declaration context
 
   -- from FixApplicator -- the outcome (O3)
   outcome                 TEXT,   -- fixed|still_failing|apply_error
@@ -516,117 +428,178 @@ CREATE TABLE repair_attempts (
   prompt_strategy         TEXT,          -- for prompt comparison
   round                   INTEGER,       -- 1 or 2 (hard cap)
   run_id                  TEXT,   -- groups one run / config
-  created_at              TEXT,
-
-  FOREIGN KEY (notebook_execution_id)
-    REFERENCES notebook_executions(id)
+  created_at              TEXT
 );
 \end{verbatim}
 
-\Cref{sec:m-resultlogger} describes how each of the eighteen
-non-\texttt{id} columns is populated from the four upstream output files,
-including how a \texttt{notebook\_execution\_id} that legitimately repeats
-across separate attempts is kept as separate rows rather than collapsed.
+The listing contains nineteen fields besides the row identifier. Their values
+are assembled from the upstream output files as described in
+\Cref{sec:m-resultlogger}. The SQLite schema does not enforce the link to the
+classifier data as a database foreign key. Instead, the logger checks that
+every \texttt{notebook\_execution\_id} exists before writing a row. Repeated
+identifiers are valid: they represent separate decisions for the same
+notebook execution and are deliberately kept as separate rows.
 
 \subsection{Knowledge-Graph Enrichment}
 \label{subsec:kg}
 
-The FAIR Jupyter knowledge graph~\cite{samuel2024fairkg} is not written by
-hand. It is generated from one RML mapping per table, run through
-Morph-KGC by the project's existing build script. Objective~O6 adds a
-single new mapping for the \texttt{repair\_attempts} table, modelled on the
-existing mapping for the executions table. It re-expresses each row as
-triples whose notebook IRI matches the notebook resource used by the
-existing FAIR Jupyter knowledge graph. When the generated repair RDF is
-combined with or loaded alongside the upstream graph, the repair history
-can therefore be queried together with the existing reproducibility data.
-Following the existing CSV-based RML architecture,
-rather than introducing a separate RDF-generation pipeline, keeps the
-repair data readable by the same tooling as everything else in the graph.
+The database trace is useful for the pipeline itself. The RDF export makes
+the same repair information available as a graph that can be linked to FAIR
+Jupyter~\cite{samuel2024fairkg}. In this graph, a notebook is connected to
+the repair attempts made for its failed execution. A researcher can then see
+both the original reproducibility record and the later repair history through
+the same notebook identifier.
 
-The vocabulary strategy follows the earlier design notes: \emph{reuse} existing
-\texttt{repr:} terms where they already fit (e.g.\ \texttt{repr:exception}),
-\emph{add} new \texttt{repr:} terms for repair-specific facts, and use
-PROV-O~\cite{provenance2013}
-for the activity/agent/time layer, representing each repair as a
-\texttt{prov:Activity}. This serialisation of repair provenance directly
-serves the Reusable principle of FAIR~\cite{wilkinson2016fair} and the
-execution-environment provenance emphasised by
-FAIR4RS~\cite{barker2022fair4rs}.
-The base IRI is \texttt{repr:}~$=$~\url{https://w3id.org/reproduceme/} and
-the serialisation is Turtle (\texttt{.ttl}).
+Objective~O6 adds an RML mapping for \texttt{repair\_attempts}. RML is a
+set of rules that converts table rows into RDF triples. The mapping is based
+on FAIR Jupyter's existing execution mapping: for each repair row, it creates
+a repair-attempt resource and links it to the existing notebook resource.
+Morph-KGC runs these rules from the project's build script. Reusing this
+CSV-based process means that the repair data is generated with the same
+tooling as the rest of the graph.
+
+The vocabulary is kept simple. Existing \texttt{repr:} terms are reused when
+they already describe a fact, such as a post-repair exception. New
+\texttt{repr:} terms describe repair-specific facts, such as the failing
+module and repair outcome. PROV-O~\cite{provenance2013} describes each repair
+attempt as an activity with a completion time. The base IRI is
+\texttt{repr:}~$=$~\url{https://w3id.org/reproduceme/}, and the output format
+is Turtle (\texttt{.ttl}).
+
+The repair RDF is materialised and structurally validated in this work. It
+has not been loaded into a public triple store, so public graph queries are
+not evaluated here. The export supports later reuse, in line with the
+provenance emphasis of FAIR4RS~\cite{barker2022fair4rs}, but it does not by
+itself demonstrate that all FAIR principles have been met.
 
 \begin{verbatim}
-repr:notebook_512  repr:hadRepairAttempt  repr:repairattempt_001 .
+repr:notebook_453  repr:hadRepairAttempt  repr:repairattempt_001 .
 
 repr:repairattempt_001
     a                       prov:Activity, repr:RepairAttempt ;
-    repr:exception          "ModuleNotFoundError" ;  # existing term
-    repr:failingModule      "scanpy" ;                # new term
-    repr:fixCommand         "python -m pip install scanpy==1.9.3" ;
+    repr:failingModule      "numpy" ;                 # new term
+    repr:fixCommand         "python -m pip install numpy==1.24.1" ;
     repr:fixOutcome         "fixed" ;
     repr:llmModel           "gemma2:9b" ;
-    prov:endedAtTime        "2026-07-15T14:22:00Z"^^xsd:dateTime .
+    prov:endedAtTime        "2026-09-25T05:30:13Z"^^xsd:dateTime .
 \end{verbatim}
+
+The example uses the repair values from record~198. The first line links
+notebook~453 to a repair attempt. The remaining lines describe that attempt:
+the failed import was \texttt{numpy}, the applied command installed
+\texttt{numpy==1.24.1}, and the notebook was fixed. The identifier
+\texttt{repairattempt\_001} is a stand-in for the row identifier assigned at
+export time. If a repair still fails, the mapping also records the
+\emph{post-repair} exception and message with \texttt{repr:exception} and
+\texttt{repr:msg}. The dependency-declaration context remains in the SQLite
+and CSV trace; the current RML mapping does not export that field.
 
 % ---------------------------------------------------------------------
 \section{Demonstration Interface}
 \label{sec:demo-interface}
 
-A demonstration interface was built alongside the pipeline to make its
-executions and repair results easier to inspect than the raw output files
-allow. It is a small, static web application with two views. A dashboard
-lists every notebook record of the final evaluation run, with filters for
-subtype, final outcome, and Round-2 state. Selecting a record opens a
-per-notebook Repair Workspace that steps through the stages this chapter
-defines, from the original failure through classification, explanation,
-repair, fix application, and re-execution to the final result, including a
-second round where one occurred.
+A demonstration interface accompanies the pipeline so that a single repair can
+be followed from the original failure to the final verdict without reading raw
+trace files. It is a small static web application with two views. A record
+list covers every notebook of one recorded run and can be filtered by the
+decision path a record took. Selecting a record opens a trace view that walks
+that notebook through the stages this chapter has defined, grouped into
+reading the failure, grounding a repair, and applying it.
 
-This interface is a visualisation layer, not a sixth pipeline component. It
-only displays artefacts the pipeline has already produced, and issues no
-requests of its own to Ollama, PyPI, GitHub, or Docker. Nothing it does can
-influence a repair decision. It played no part in the quantitative
-evaluation of \Cref{chap:validation}, and no usability evaluation of the
-interface itself is claimed.
+The interface is a visualisation layer, not a further pipeline component. It
+reads the stored artefacts of a completed run -- the round-by-round trace, the
+classifier context and the run manifest -- and renders them unchanged. It
+issues no request of its own to Ollama, PyPI, GitHub or Docker, no control in
+it executes a repair, and nothing it displays can alter a recorded decision.
+The figures below are taken from the recorded run
+\texttt{v2-evaluation-20260925T013000Z}, produced with \texttt{gemma2:9b}
+served by a local Ollama instance. The interface played no part in the
+quantitative evaluation of \Cref{chap:validation}, and no usability evaluation
+of the interface itself is claimed.
 
-\Cref{fig:demo-workspace-failure,fig:demo-workspace-repair,fig:demo-workspace-reexecution}
-show three successive stages of the same recorded execution, notebook
-\#164, whose Round-1 repair of \texttt{sklearn} succeeds in removing the
-targeted error while the notebook as a whole continues to fail on a later,
-different dependency error -- the distinction analysed quantitatively in
-\Cref{chap:validation}.
+A repair is easiest to misread where one name is substituted for another, so
+the interface assigns a fixed colour to each role a name can occupy: the
+requested top-level import, a candidate distribution proposed by a mapping
+source, a distribution verified against PyPI and wheel metadata, the repair
+selected by RAGRepairAgent, the command FixApplicator applied, and the outcome
+Docker reported. \Cref{fig:demo-records} shows the record list with that key
+and with one highlighted record per decision path.
 
 \begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.75\textwidth]{demo-workspace-failure-workspace.png}
-  \caption{Repair Workspace, entry stage, for notebook \#164, cropped to the
-  workspace area. The recorded
-  execution path across the top marks the stage in view. The centre panel
-  shows the captured failure, and the Final Result panel on the right
-  summarises the outcome of the whole bounded repair process.}
-  \label{fig:demo-workspace-failure}
+  \includegraphics[width=0.95\textwidth]{demo-records-dashboard.png}
+  \caption{Record list. The strip below the header names the run whose
+  artefacts are being displayed and the integrity checks it passed. The key
+  beneath it fixes the colour of each role a package name can occupy, and the
+  cards below single out one recorded notebook per decision path: a repair
+  confirmed by Docker, a second round, an out-of-scope failure that is only
+  explained, two abstentions, and a model proposal that passed verification.
+  The table lists every record of the run and can be filtered by decision
+  path.}
+  \label{fig:demo-records}
+\end{figure}
+
+\Cref{fig:demo-read,fig:demo-ground,fig:demo-apply} follow one record, the
+notebook \texttt{01\_basic\_use.ipynb} of the CxSystem2 repository, whose
+recorded execution raised an \texttt{ImportError} for the name
+\texttt{VisibleDeprecationWarning} in \texttt{numpy}. The three views separate
+what the pipeline knew about the failure, what evidence it gathered before
+deciding, and what the container reported afterwards.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\textwidth]{demo-trace-failure-classification-explanation.png}
+  \caption{Reading the failure. The recorded error is shown with the
+  top-level import the repair layer resolves, next to the recorded subtype,
+  scope decision and repair eligibility. The explanation panel on the right
+  reproduces the stored structured explanation and states that this text is
+  written for a reader and is not used as evidence for the repair decision.}
+  \label{fig:demo-read}
 \end{figure}
 
 \begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.9\textwidth]{demo-workspace-repair-panel.png}
-  \caption{RAGRepairAgent stage for the same notebook, cropped to the
-  centre panel of the workspace. The chain at the top traces the import
-  name through package mapping and retrieved release evidence to the
-  grounded proposal, next to the schema- and grounding-validation outcomes
-  recorded for it.}
-  \label{fig:demo-workspace-repair}
+  \includegraphics[width=0.85\textwidth]{demo-trace-candidates-verification-decision.png}
+  \caption{Grounding the repair. Candidate generation records which
+  deterministic source resolved the distribution name. Verification lists the
+  releases whose wheel metadata declares the requested import, with the
+  inspected wheel beneath each release. The repository dependency context is
+  shown separately and marked as contextual rather than authoritative. In the
+  decision panel the model's role is confined to choosing among the releases
+  already verified, and the resulting command is recorded verbatim.}
+  \label{fig:demo-ground}
 \end{figure}
 
 \begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.9\textwidth]{demo-workspace-reexecution-panel.png}
-  \caption{Re-execution stage for the same notebook, cropped to the centre
-  panel. The targeted \texttt{sklearn} error is resolved and a different
-  dependency error (\texttt{pandas}) surfaces in its place. The recorded
-  Round-2 trigger decision that follows is shown with its reason.}
-  \label{fig:demo-workspace-reexecution}
+  \includegraphics[width=0.95\textwidth]{demo-trace-fix-docker-result.png}
+  \caption{Applying the repair. The applied command is shown with the exit
+  code of the installation step, the repository checkout and the wall time of
+  the re-execution. The verdict beside it is the outcome of re-running the
+  notebook in the container, not a judgement made by the model, and the panel
+  on the right summarises the state the run recorded for this notebook.}
+  \label{fig:demo-apply}
+\end{figure}
+
+Where a repair succeeds but the notebook then stops on a different dependency
+error, the interface opens a second round and states why it ran.
+\Cref{fig:demo-round2} shows such a record: installing \texttt{openpyxl}
+removed the original failure, re-execution then stopped on a missing
+\texttt{pandas} module, and that newly exposed error was itself eligible for
+repair. Records in which the newly exposed error falls outside the
+pip-installable scope are displayed in the same place as an explanation
+without a following repair round.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.92\textwidth]{demo-trace-round2-reason.png}
+  \caption{A second round. The banner states why the round ran: the first
+  repair removed the original failure and re-execution stopped on a different
+  dependency error that is itself repairable. The stages below describe that
+  newly exposed error, which the pipeline reclassified from the execution
+  outcome before repairing it once more. The round selector above the stage
+  list switches between the two recorded rounds.}
+  \label{fig:demo-round2}
 \end{figure}
 
 \FloatBarrier

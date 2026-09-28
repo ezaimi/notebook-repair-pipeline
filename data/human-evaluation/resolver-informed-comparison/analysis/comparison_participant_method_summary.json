@@ -1,0 +1,28 @@
+{
+  "condition_means": [
+    {
+      "method": "llm",
+      "n": 15,
+      "mean": 4.06,
+      "median": 4.25,
+      "iqr": 1.0830000000000002
+    },
+    {
+      "method": "resolver_template",
+      "n": 15,
+      "mean": 4.4,
+      "median": 4.667,
+      "iqr": 1.0830000000000002
+    }
+  ],
+  "within_participant_difference": {
+    "direction": "llm_minus_template",
+    "n": 15,
+    "mean": -0.34,
+    "median": -0.4169999999999998,
+    "iqr": 0.3330000000000002,
+    "llm_higher": 2,
+    "same": 1,
+    "resolver_template_higher": 12
+  }
+}

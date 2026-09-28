@@ -1,0 +1,16 @@
+participant_id,survey_variant,prog_experience,python_familiarity,jupyter_familiarity,dependency_error_familiarity,open_feedback_1,open_feedback_2
+P01,A,Advanced/Professional,Use it regularly,Use them regularly,Frequently,,
+P02,A,Beginner,Used it a little,Used them a few times,Occasionally,,
+P03,A,Intermediate,Used it a little,Used them a few times,Occasionally,,
+P04,B,Intermediate,Use it regularly,Used them a few times,Frequently,Some explanations repeated the error message and could have explained the cause a little more.,"It would be more helpful if the explanations gave a little more context about the likely cause instead of mainly restating the error. Including specific details, such as the correct package name or what kind of version incompatibility might be involved, would make them more informative."
+P05,B,Intermediate,Used it a little,Used them a few times,Occasionally,,
+P06,B,Intermediate,Used it a little,Used them a few times,Occasionally,,
+P07,B,Intermediate,Use it regularly,Used them a few times,Occasionally,no,more detailed explanation about the error message
+P08,C,Advanced/Professional,Used it a little,Used them a few times,Occasionally,,
+P09,C,Advanced/Professional,Use it regularly,Used them a few times,Frequently,No,Yes
+P10,C,Intermediate,Use it regularly,Used them a few times,Frequently,,
+P11,C,Intermediate,Use it regularly,Never used them,Occasionally,,
+P12,D,Intermediate,Never used it,Never used them,Occasionally,,They were very helpful and also provide enough information on understanding exactly what is working wrong
+P13,D,Intermediate,Used it a little,Never used them,Occasionally,,
+P14,D,Advanced/Professional,Used it a little,Used them a few times,Occasionally,Nothing. Everything is clear,
+P15,D,Intermediate,Use it regularly,Used them a few times,Occasionally,,

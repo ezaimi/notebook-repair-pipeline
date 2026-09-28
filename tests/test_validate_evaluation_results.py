@@ -193,6 +193,71 @@ def test_check_manifest_hash_consistency_passes_when_unchanged(tmp_path, monkeyp
     assert result.passed is True
 
 
+def test_check_manifest_hash_consistency_uses_manifest_config_paths_not_gemma_defaults(tmp_path, monkeypatch):
+    """A run recorded under a sibling config (e.g. config/*.kiste.yaml,
+    per manifest["config_paths"]) must be checked against THOSE paths, not
+    the hardcoded Gemma defaults - this is the bug fixed here: previously
+    a non-default-provider run always failed this check even when nothing
+    had actually drifted, because the recompute always targeted
+    config/llm_explainer.yaml / config/rag_repair.yaml /
+    config/fix_applicator.yaml regardless of what the run itself used."""
+    import evaluation_manifest as em
+
+    captured = {}
+
+    def fake_build_config_hashes(root, hashed_paths=None):
+        captured["hashed_paths"] = hashed_paths
+        return {name: f"HASH::{path}" for name, path in (hashed_paths or {}).items()}
+
+    monkeypatch.setattr(em, "build_config_hashes", fake_build_config_hashes)
+
+    manifest = {
+        "config_paths": {
+            "explainer_config": "config/llm_explainer.kiste.yaml",
+            "repair_config": "config/rag_repair.kiste.yaml",
+            "fix_config": "config/fix_applicator.evaluation.local.yaml",
+        },
+        "config_hashes": {
+            "llm_explainer_config": "HASH::config/llm_explainer.kiste.yaml",
+            "rag_repair_config": "HASH::config/rag_repair.kiste.yaml",
+            "fix_applicator_config": "HASH::config/fix_applicator.evaluation.local.yaml",
+            "package_mapping": "HASH::config/package_mapping.yaml",
+            "prompts_dir": "HASH::prompts",
+        },
+    }
+
+    result = ver.check_manifest_hash_consistency(manifest, tmp_path)
+
+    assert captured["hashed_paths"]["llm_explainer_config"] == "config/llm_explainer.kiste.yaml"
+    assert captured["hashed_paths"]["rag_repair_config"] == "config/rag_repair.kiste.yaml"
+    assert captured["hashed_paths"]["fix_applicator_config"] == "config/fix_applicator.evaluation.local.yaml"
+    # package_mapping/prompts_dir are never provider-specific - untouched defaults
+    assert captured["hashed_paths"]["package_mapping"] == em.DEFAULT_HASHED_PATHS["package_mapping"]
+    assert captured["hashed_paths"]["prompts_dir"] == em.DEFAULT_HASHED_PATHS["prompts_dir"]
+    assert result.passed is True
+
+
+def test_check_manifest_hash_consistency_falls_back_to_defaults_when_config_paths_absent(tmp_path, monkeypatch):
+    """A manifest with no config_paths key at all (defensive backward
+    compatibility) must be checked against exactly DEFAULT_HASHED_PATHS,
+    unchanged from before this fix."""
+    import evaluation_manifest as em
+
+    captured = {}
+
+    def fake_build_config_hashes(root, hashed_paths=None):
+        captured["hashed_paths"] = hashed_paths
+        return {"package_mapping": "SAME"}
+
+    monkeypatch.setattr(em, "build_config_hashes", fake_build_config_hashes)
+
+    manifest = {"config_hashes": {"package_mapping": "SAME"}}
+    result = ver.check_manifest_hash_consistency(manifest, tmp_path)
+
+    assert captured["hashed_paths"] == em.DEFAULT_HASHED_PATHS
+    assert result.passed is True
+
+
 # --- ResultLogger row reconciliation ---------------------------------------------
 
 def test_check_result_logger_reconciliation_detects_missing_row():

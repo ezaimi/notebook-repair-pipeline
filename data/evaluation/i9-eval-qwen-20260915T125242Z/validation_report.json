@@ -1,0 +1,65 @@
+{
+  "run_id": "i9-eval-qwen-20260915T125242Z",
+  "checks": [
+    {
+      "name": "expected_record_count",
+      "passed": true,
+      "detail": "expected=187 actual=187"
+    },
+    {
+      "name": "all_expected_ids_present",
+      "passed": true,
+      "detail": "missing=[] unexpected=[]"
+    },
+    {
+      "name": "no_silent_skips",
+      "passed": true,
+      "detail": "duplicate_trace_ids=[]"
+    },
+    {
+      "name": "no_duplicate_repair_attempts_rows",
+      "passed": true,
+      "detail": "duplicates=[]"
+    },
+    {
+      "name": "no_round_greater_than_two",
+      "passed": true,
+      "detail": "offending_notebook_execution_ids=[]"
+    },
+    {
+      "name": "every_round2_row_has_round1_row",
+      "passed": true,
+      "detail": "orphan_round2_notebook_execution_ids=[]"
+    },
+    {
+      "name": "round2_only_after_valid_trigger",
+      "passed": true,
+      "detail": "offending_notebook_execution_ids=[]"
+    },
+    {
+      "name": "single_run_id",
+      "passed": true,
+      "detail": "expected=i9-eval-qwen-20260915T125242Z unexpected_trace_run_ids=[] unexpected_row_run_ids=[]"
+    },
+    {
+      "name": "no_excluded_records_in_evaluation_split",
+      "passed": true,
+      "detail": "offending_ids=[]"
+    },
+    {
+      "name": "no_dev_records_in_evaluation_split",
+      "passed": true,
+      "detail": "offending_ids=[]"
+    },
+    {
+      "name": "manifest_config_hash_consistency",
+      "passed": false,
+      "detail": "{\"rag_repair_config\": {\"recorded\": \"76ff1538f6cfaab292e001141a5a429f4283935881cb9db573cce421605e6eea\", \"current\": \"1760f298c4b778ae6c36f4774a5833e932ca37eb1190e30ca865e888f4a5d94f\"}, \"llm_explainer_config\": {\"recorded\": \"f3a3d39df767eda9f3699bad4518ed78a8e5f600696c79f2c1e79eb644b3389c\", \"current\": \"ae3170258456f017f3ea8254b3a5ea570583c82dae2cc1de0d74b2d39dbdac7d\"}, \"fix_applicator_config\": {\"recorded\": \"d02577b07824da27e37c81f5054503c0ac43c09d51ee2bb38aa0df6478724385\", \"current\": \"138aaf4f0552d43432dff5b86bb9cf8cd53286beda10893ce3d96e66dbe45637\"}}"
+    },
+    {
+      "name": "result_logger_row_reconciliation",
+      "passed": true,
+      "detail": "missing_rows=[] unexpected_rows=[]"
+    }
+  ]
+}

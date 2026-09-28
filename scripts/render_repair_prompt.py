@@ -111,10 +111,40 @@ def format_limitations(record: Dict[str, Any]) -> str:
     return NOT_AVAILABLE
 
 
+def format_declared_constraint(evidence: Optional[Dict[str, Any]]) -> str:
+    """Render repository requirements as explicitly non-authoritative context."""
+    if not isinstance(evidence, dict):
+        return NOT_AVAILABLE
+    status = evidence.get("status") or NOT_AVAILABLE
+    declarations = evidence.get("matching_declarations") or []
+    lines = [f"status: {status}"]
+    for declaration in declarations:
+        path = declaration.get("path", NOT_AVAILABLE)
+        line_number = declaration.get("line_number", NOT_AVAILABLE)
+        raw = declaration.get("raw", NOT_AVAILABLE)
+        lines.append(f"- {path}:{line_number}: {raw}")
+    for declaration in evidence.get("alias_declarations") or []:
+        path = declaration.get("path", NOT_AVAILABLE)
+        line_number = declaration.get("line_number", NOT_AVAILABLE)
+        raw = declaration.get("raw", NOT_AVAILABLE)
+        expected = declaration.get("expected_distribution", NOT_AVAILABLE)
+        lines.append(
+            f"- {path}:{line_number}: {raw} (known import alias; expected distribution: {expected})"
+        )
+    compatible = evidence.get("compatible_candidate_versions")
+    if isinstance(compatible, list):
+        lines.append("compatible retrieved versions: " + (", ".join(compatible) if compatible else "none"))
+    limitations = evidence.get("limitations") or []
+    if limitations:
+        lines.append("limitations: " + ", ".join(str(item) for item in limitations))
+    return "\n".join(lines)
+
+
 def build_repair_template_values(
     record: Dict[str, Any],
     retrieval_result: Dict[str, Any],
     subtype: str,
+    declared_constraint: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, str]:
     prompt_context = get_prompt_context(record)
 
@@ -135,6 +165,7 @@ def build_repair_template_values(
         "compatibility_evidence_summary": format_compatibility_evidence_summary(retrieval_result),
         "retrieval_warnings": format_warnings(retrieval_result),
         "retrieval_limitations": format_limitations(record),
+        "declared_constraint": format_declared_constraint(declared_constraint),
     }
 
 
@@ -153,6 +184,7 @@ def render_repair_prompt(
     retrieval_result: Dict[str, Any],
     subtype: str,
     template: str,
+    declared_constraint: Optional[Dict[str, Any]] = None,
 ) -> str:
-    values = build_repair_template_values(record, retrieval_result, subtype)
+    values = build_repair_template_values(record, retrieval_result, subtype, declared_constraint)
     return render_prompt(template, values)

@@ -1,0 +1,5 @@
+metric,value
+expected_record_count,187
+actual_record_count,187
+explanation_schema_validity_rate,0.8556149732620321
+note,"explanation_schema_validity_rate is the ORIGINAL-failure explanation rate (metric A, notebook-level denominator); Round-2 and combined explanation validity are in table_9_explanation_schema_validity.csv. Run scripts/validate_evaluation_results.py for full ResultLogger/KG integrity checks."

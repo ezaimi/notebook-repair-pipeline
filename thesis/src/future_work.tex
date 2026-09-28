@@ -1,154 +1,123 @@
 \chapter{Future Work}
 \label{chap:future-work}
 
-The evaluation in \Cref{chap:validation} answers the research questions of this thesis, but
-also identifies several directions for further work. These concern the use of the
-knowledge-graph enrichment, wider repair coverage, comparison with a repair
-baseline, and a broader human evaluation.
+Chapter~6 evaluates the pipeline and identifies the next steps needed before it
+could become a more widely usable repair service. The priorities are clear:
+publish the locally materialised provenance graph, improve coverage without weakening the
+evidence checks, repeat the evaluation under controlled conditions, and broaden
+the reader study. None of these steps changes the central result of this thesis:
+a repair should be accepted only after its evidence has been checked and its
+effect has been tested in the repository environment.
 
-\section{Building on the Knowledge-Graph Enrichment}
+\section{From a Validated Mapping to a Usable Repair Graph}
 \label{sec:fw-kg}
 
-Objectives O4 and O6 are both met for the final evaluation, by two
-distinct artefacts that describe the same repair attempts. The
-\texttt{repair\_attempts} table of the final Gemma run holds one row per
-repair-agent invocation, 235 in all (187 Round-1 and 48 Round-2 rows),
-with the full explanation and PyPI evidence of every invocation. That
-table, with its CSV export, is the structured benchmark dataset of O4.
-The existing RML mapping, run over that export, materialised the same 235
-attempts as 3{,}478 triples, each linked to the notebook resource of the
-FAIR Jupyter knowledge graph that identifies the repaired notebook, and
-the result passed every validation check in union with the existing
-notebook graph (\Cref{sec:v-i6-fullscale}). That repair graph is the
-enrichment of O6 at evaluation scale; it has not yet been loaded into the
-public FAIR Jupyter triple store.
+The RML mapping and notebook-identity alignment were first validated on pilot
+data in \Cref{sec:v-i6,sec:v-i6-fullscale}. The final live-PyPI run was then
+materialised locally from the complete final-evaluation table and checked against
+that source table. It has not, however, been published as an RDF graph. This
+distinction is important: local materialisation shows that the mapping can
+represent repair attempts correctly; it does not by itself provide a deployed
+graph for other researchers to query.
 
-The first extension is deployment. The enriched triples exist as files
-next to the run that produced them. Loading them into the FAIR Jupyter
-triple store, beside the graph the upstream pipeline already publishes,
-would make repair history queryable at the same public SPARQL endpoint as
-the execution records it extends. Because the repair mapping is one more
-\texttt{.rml.ttl} file of the shape the upstream build script already
-iterates over, this requires running that script with the mapping and
-the export in place, not new tooling. Materialising a second run next to
-the first, such as the Qwen run of \Cref{sec:v-model-sensitivity}, would
-first require the repair-attempt IRI template to carry the run identifier
-as well as the row id, because each run's table numbers its rows from
-one.
+The immediate next step is therefore to package and publish the already
+materialised final-evaluation graph. The exported repair attempts, mapping,
+generated triples, and validation report should be versioned with the input
+manifest and software environment so that a later reader can reproduce,
+inspect, and query the graph. The manifest described in
+\Cref{sec:v-final-manifest} provides the identifiers and hashes needed to
+connect that graph to the exact evaluation run.
 
-The second is richer use of the graph. The checks of
-\Cref{sec:v-i6-fullscale} ask structural questions: does every attempt
-link to a notebook, and does every executed attempt carry an outcome. The
-same graph can also answer the questions for which the summary tables of
-\Cref{chap:validation} were computed separately: which notebooks received
-a Round-2 attempt and after which Round-1 outcome, which failing modules
-abstained, and how the attempts of one run compare with those of another
-once both are loaded. This is possible because the round, the model, and
-the run identifier are recorded on every attempt. Written as SPARQL
-queries over the union of the upstream graph and the repair triples,
-these questions could be re-asked without returning to the SQLite table,
-and the repair history could be combined with the execution, module, and
-repository facts the graph already holds about the same notebooks.
+A published graph should support questions that the evaluation tables currently
+answer only after separate aggregation. For example, a query could identify
+notebooks that reached Round~2, list modules for which the resolver abstained,
+or compare outcomes across runs. Before more than one run is loaded, the
+repair-attempt IRI should include the run identifier as well as the row
+identifier. This prevents independently generated tables from creating the same
+IRI for different repair attempts.
 
-The third is a richer vocabulary. The mapping records the proposed
-package, version, and PyPI evidence as literals on the repair attempt.
-Modelling the installed distribution and its release as resources of
-their own, and linking each repair attempt to them, would connect repair
-provenance to package and version entities that other datasets could
-share. A query could then ask, for instance, which notebooks were
-repaired by pinning the same NumPy release. Repair actions this thesis
-deferred, such as replacing an import (\Cref{sec:fw-coverage}), and any
-further repair rounds would need no change to the mapping: its existing
-predicates already carry the action value and the round number.
+A later extension is to model distributions and releases as RDF resources rather
+than storing only their names and versions as literals. A repair attempt could
+then link to the selected distribution, release, and verified import evidence.
+This would make it easier to ask cross-run questions, such as which notebooks
+were repaired with the same package version, while preserving the attempt-level
+provenance already recorded by the pipeline.
 
-\section{Widening Repair Coverage}
+\section{Widening Repair Coverage Safely}
 \label{sec:fw-coverage}
 
-The single largest limit on this system's repair coverage is the static
-import-to-distribution mapping. It left 162 of 235 repair-agent
-invocations abstaining before the language model was reached
-(\Cref{sec:v-final-abstention}), and the model-sensitivity experiment
-showed this limit is shared across both models tested
-(\Cref{sec:v-model-sensitivity}). Extending the mapping table is the
-obvious first step, but it does not remove the underlying problem: any
-hand-curated table needs continued maintenance and cannot resolve a name
-it has never been told about. A more durable approach would resolve import
-names against a maintained external source, and fall back to abstention
-only when that source genuinely cannot answer.
+The live-PyPI evaluation ended with 52 abstentions among 187 notebooks
+(\Cref{sec:v-final-abstention}). Abstention is a safety outcome, not simply a
+missing repair: it means that the pipeline could not establish a sufficiently
+verified action. Future coverage work should therefore preserve the current
+rule that a distribution name and its import evidence must be verified before
+Docker applies a repair.
 
-Two further limits are narrower but real. The compatibility-evidence
-registry that supports \texttt{wrong\_version} repairs holds three
-hand-checked entries (\Cref{tab:m-compat}), which is enough for this
-dataset and no more. Deriving such evidence automatically from release
-notes or from a project's own API history would generalise it. The
-repair scope is pip-only by design (\Cref{sec:pd-scope}), which leaves
-the 10 \texttt{system\_library} records unrepairable and rules out fixing
-an API rename inside a notebook's own source. A related extension
-concerns the repository's declared dependency files, which the pipeline
-currently uses only to rebuild the baseline environment
-(\Cref{sec:m-repair-nodeps}). They could additionally be shown to the
-repair model as non-authoritative context, for instance to flag that a
-proposed pin conflicts with a version the repository declares, while PyPI
-evidence remains the only source from which a version may be drawn.
+The most promising improvement is to reduce dependence on the static
+import-to-distribution mapping. A maintained external mapping source, combined
+with the existing PyPI and wheel checks, could resolve more imports while
+retaining the same safety boundary. It should be evaluated against a manually
+checked sample before being allowed to change repair decisions. Extending a
+local mapping table remains useful for well-understood cases, but it cannot be
+the only long-term strategy because it needs continual maintenance.
 
-A third question the evaluation raised but could not answer is how much a
-larger repair budget would help. \Cref{sec:v-case-study} shows a notebook
-that exposed a third dependency error after two successful targeted
-repairs. Whether a third or fourth round would have recovered it, or
-whether notebooks of this kind have a long tail of dependency problems,
-is unmeasured: no run beyond two rounds was attempted.
+Coverage is also limited by the kinds of repair the pipeline deliberately
+excludes. A \texttt{wrong\_version} repair needs reliable compatibility evidence
+and repository context (\Cref{sec:m-repair-compat}). The current pip-only scope
+does not repair system libraries, local files, or an outdated import inside a
+notebook. Future work could test additional repair actions, such as a
+source-level import replacement, but each action needs its own evidence rule,
+safe application procedure, and Docker-based validation. It should not be
+treated as an unconstrained language-model edit.
 
-Two further points concern how the final runs were executed rather than
-what they repaired. First, the commit-pinning mechanism of FixApplicator
-was not in effect in the final evaluation environment
-(\Cref{sec:v-final-manifest}), so the evaluated repositories were cloned
-at their default-branch state. A rerun with the metadata database
-reachable from the execution environment would test each repository at the
-commit that originally failed, and would show whether any of the 187
-outcomes depends on changes the repository's authors made since. Second,
-the Gemma explainer lost 27 of 237 explanation records to timeouts of the
-local, CPU-only model service (\Cref{sec:v-final-explanation}). A larger
-timeout, or serving the same model on faster hardware, would separate how
-much of that gap is the machine and how much is the model; the present
-results cannot.
+The two-round limit is another deliberate boundary. The worked case in
+\Cref{sec:m-worked-example} shows why a targeted repair can expose a later
+dependency error. A controlled experiment with three or four rounds could
+measure whether a larger budget yields more complete notebook recoveries or
+only moves failures further into execution. Recording a Docker image digest and
+an installed-package inventory for each original execution would make that
+experiment more reproducible and would help distinguish a repair effect from
+changes in an unpinned environment.
 
-\section{Baseline Comparison}
-\label{sec:fw-baseline}
+\section{Stronger Evaluation Designs}
+\label{sec:fw-evaluation}
 
-This thesis reports how its own repair layer performs, not how it performs
-relative to an alternative. The most informative comparison would be
-against the same agent with PyPI grounding removed, so that the
-contribution of grounding could be isolated from the contribution of the
-model. Such a comparison could reuse the existing evaluation design
-without changing the dataset or the metric definitions of
-\Cref{chap:validation}. The ungrounded baseline has not been built and
-the comparison has not been run, so this thesis makes no claim about
-grounding's measured benefit.
+The current evaluation is intentionally transparent about its scope: each model
+configuration and comparison condition was run once. Repeating the evaluation
+with fixed package snapshots and repeated model calls would show how sensitive
+the reported outcomes are to model sampling, Docker timing, and changing
+external services. Reporting variation across runs would be more informative
+than presenting a single run as a stable property of a model or method.
+
+A focused ablation should test the contribution of PyPI grounding itself. The
+PLLM-style comparison in \Cref{sec:v-pllm-comparison} compares two different
+repair approaches, so it cannot isolate one component. A better ablation would
+hold the input records, model, Docker component, repair-round limit, and frozen
+package snapshot constant, then compare the thesis pipeline with and without
+the grounding checks. The result should report both full notebook recovery and
+targeted-error resolution, because these measures answer different questions.
 
 \section{Extending the Human Evaluation}
 \label{sec:fw-human}
 
-The human evaluation reported in \Cref{sec:v-human-eval-results} is a
-convenience sample of 15 participants, each rating six explanations from
-a frozen pool of 12, all of them Gemma explanations of original failures.
-It supports a descriptive picture only
-(\Cref{sec:v-human-eval-limitations}). The Round-2 explanations of
-newly exposed errors and the Qwen explanations were evaluated
-automatically for completion and schema validity only, and rating them
-with the same instrument is the most direct extension. Three further
-extensions would each answer a question the present study cannot.
+The human evaluation is descriptive and uses a convenience sample of 15
+participants. The blinded comparison found that resolver-informed templates
+were rated more positively than the selected LLM explanations for the four
+tested errors (\Cref{sec:v-human-eval-comparison}). This is a useful finding,
+but it is not a general ranking of explanation methods.
 
-With an appropriate sampling and analysis design, a larger sample could
-support inferential comparisons rather than descriptive claims. A
-replication with expert raters, judging explanations
-against each notebook's true root cause, would measure objective
-correctness, which this study does not: Q6 captures only whether an
-explanation struck a reader as correct. Showing participants an
-alternative explanation, whether from a different model or from a non-LLM
-template, would place these results on a comparative scale.
+A larger, pre-registered study could recruit readers with defined programming
+experience, assign errors and explanation conditions using a balanced design,
+and analyse ratings at the participant level. Expert review against the actual
+root cause of each notebook would add a measure of objective correctness,
+which the current perceived-correctness item cannot provide. The same study
+could include explanations for newly exposed Round-2 errors and for both model
+configurations; Chapter~6 currently evaluates those explanations only for
+completion and schema validity (\Cref{sec:v-final-explanation}).
 
-The free-text feedback points to one concrete improvement worth testing
-directly. Several participants asked for more about the likely cause and
-less restatement of the error message (\Cref{sec:v-human-eval-results}).
-Whether a revised prompt raises the satisfaction item without harming the
-others could be tested with the existing instrument and example pool.
+The existing free-text feedback also suggests a practical prompt experiment.
+Several readers wanted more explanation of the likely cause and less repetition
+of the error message. A revised prompt can be compared with the current one on
+the same questionnaire items and error examples. The study should retain the
+current distinction between explaining a failure and proposing a repair: a clear
+explanation does not, by itself, make an unverified repair safe.

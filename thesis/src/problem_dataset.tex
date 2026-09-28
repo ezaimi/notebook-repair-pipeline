@@ -1,14 +1,14 @@
 \chapter{Problem Analysis and Dataset}
 \label{chap:problem-dataset}
 
-This chapter answers two questions and keeps them apart. How large is the
-reproducibility problem in general, and what exactly does this thesis's
-implementation operate on? The first is answered by numbers from the
-original, full-scale FAIR Jupyter study. The second is answered by a much
-smaller, precisely defined dataset drawn from the newer Docker-based
-pipeline. The two are related, because the second is a residual subset of
-the same kind of failure, but they are not the same numbers and are never
-mixed here.
+This chapter distinguishes two questions. First, how large is the
+reproducibility problem in general? Second, what data does this thesis
+actually operate on? The first question is answered with figures from the
+original, full-scale FAIR Jupyter study. The second is answered with a smaller,
+precisely defined dataset of residual dependency failures from the newer
+Docker-based pipeline. Both concern notebook reproducibility, but they come
+from different execution runs and serve different purposes. Their counts are
+therefore kept separate throughout this thesis.
 
 \section{Scale of the Problem}
 \label{sec:pd-l1}
@@ -35,9 +35,9 @@ re-execution and 6,588 \texttt{ModuleNotFoundError} and
 denominator~\cite{samuel2024gigascience}; the small differences reflect
 the counting rule stated above, not a different dataset. In other words,
 roughly two out of every three executed notebooks failed for a
-dependency-related reason. The missing modules were dominated by
-biomedical and machine-learning packages, consistent with the PubMed Central
-origin of the dataset: \texttt{anndata} (1258 occurrences),
+dependency-related reason. The most frequent missing modules in that snapshot
+included packages commonly used in biomedical and data-analysis work:
+\texttt{anndata} (1258 occurrences),
 \texttt{scanpy} (423), \texttt{pandas} (177), \texttt{cemba\_data} (176),
 \texttt{tensorflow} (149), \texttt{Bio} (108), and \texttt{fastai} (103) were
 the most frequently missing modules in that snapshot.
@@ -54,19 +54,20 @@ next.
 \subsection{Why the Docker Pipeline, Not the Conda Run}
 \label{sec:pd-why-docker}
 
-The newer, containerised pipeline~\cite{samuel2025docker} re-executes
-each repository inside its own Docker container. Containerisation
-resolves many of the failures counted in \Cref{sec:pd-l1} that were
-really caused by a missing system tool or an operating-system mismatch,
-not by the notebook's Python dependencies. What is left over after
-containerisation -- notebooks that still fail even inside a container
-built specifically for them -- is a cleaner, more targeted signal of a
-genuine dependency problem. This is why the Docker pipeline, not the
-original conda run, was chosen as the integration target. Its residual
-failures are exactly the gap this thesis is meant to close. And its
-result schema already tags each failure with a pre-computed
-\texttt{error\_category}, which removes the need to re-implement
-failure detection from scratch.
+The Docker-based pipeline~\cite{samuel2025docker} prepares a
+repository-specific Docker environment for each notebook execution. As part of
+this preparation, it extracts libraries from notebook import statements and
+can add inferred dependencies to the repository configuration used to build
+that environment. This upstream preparation establishes the baseline environment;
+it does not prove that a declared or inferred distribution provides a
+particular Python import. That later verification is part of this thesis's
+repair workflow (\Cref{sec:m-repair-retrieval}).
+The improved execution rate in this Docker-based subset cannot therefore be
+attributed to containerisation alone. It may result from the Docker
+environment, the additional dependencies inferred from imports, or the
+combination of both. The notebooks that still fail after these upstream steps
+form the residual dataset used in this thesis. They provide a more focused
+starting point for dependency repair than the earlier conda-based run.
 
 \subsection{Source and Filtering}
 \label{sec:pd-source}
@@ -76,10 +77,12 @@ database (\texttt{notebook\_executions} table). Its existing categorisation
 routine already maps two exception types into a bucket called
 \texttt{DEPENDENCY\_ERROR}: \texttt{ModuleNotFoundError} and
 \texttt{ImportError}. These two types were kept, unchanged, as this thesis's
-scope, for two reasons: they are exactly what the upstream pipeline already
-flags as dependency-related, and, taken together, they cover both a package
-being completely absent and a package being present but missing a specific
-name the notebook tries to import.
+scope because they are exactly what the upstream pipeline already flags as
+dependency-related. They are an operational starting point, not proof of one
+specific root cause. A \texttt{ModuleNotFoundError} reports that Python could
+not resolve an import, while an \texttt{ImportError} reports that an import
+operation failed. The message is subsequently classified into a repair-oriented
+subtype; any distribution proposed for repair is verified later.
 
 Filtering every row where \texttt{error\_category = 'DEPENDENCY\_ERROR'}
 yields \textbf{214} rows: 172 \texttt{ModuleNotFoundError} and 42
@@ -91,15 +94,14 @@ numbers can be independently recomputed.
 \subsection{Repair Scope: Why pip-Only}
 \label{sec:pd-scope}
 
-Not every one of the 214 rows can be repaired the same way. Version~1 of the
-repair layer is restricted, deliberately, to dependency problems that a
-single \texttt{pip install} command can fix: installing a missing package,
-or pinning a specific version. This scope decision was made for a concrete
-reason: it keeps the first version of the system controlled and measurable.
-A repair action that also has to reason about system-level packages
-(installed with \texttt{apt}, not \texttt{pip}) or about renaming an import
-path inside the notebook's own code introduces a second, much larger kind of
-decision that this thesis does not attempt to automate yet.
+Not every one of the 214 rows can be repaired in the same way. The repair
+layer is deliberately limited to third-party Python dependency actions that
+can be applied with \texttt{pip}: installing a verified distribution or
+pinning a verified version. This scope keeps the automated decision controlled
+and measurable. Repairing a system-level dependency, for example through the
+operating system's package manager, or changing a local import path in notebook
+code requires a different kind of intervention that this thesis does not
+automate.
 
 Applying this scope splits the 214 rows into the four subtypes of
 \Cref{tab:pd-subtypes}, and those in turn into two groups.
@@ -110,13 +112,13 @@ Applying this scope splits the 214 rows into the four subtypes of
     \hline
     \textbf{Subtype} & \textbf{Count} & \textbf{Meaning} \\
     \hline
-    \texttt{missing\_package} & 179 & The imported module is genuinely absent. \\
+    \texttt{missing\_package} & 179 & The error pattern indicates that an import cannot be found. A later resolver must verify any PyPI distribution. \\
     \hline
-    \texttt{wrong\_version} & 21 & The module is present, but the notebook imports a name that no longer exists in the installed version. \\
+    \texttt{wrong\_version} & 21 & The error pattern indicates a version, API, or transitive-dependency compatibility problem. \\
     \hline
-    \texttt{system\_library} & 10 & A missing shared object file (e.g.\ \texttt{libxcb.so.1}), installable only with \texttt{apt}, not \texttt{pip}. \\
+    \texttt{system\_library} & 10 & A missing shared object file (e.g.\ \texttt{libxcb.so.1}) that requires system-level environment work, outside the pip-only scope. \\
     \hline
-    \texttt{mapping\_unknown} & 4 & An ambiguous local or path-shadowed name (e.g.\ \texttt{utils}) that cannot safely be mapped to a PyPI package. \\
+    \texttt{mapping\_unknown} & 4 & A name with local or path ambiguity (e.g.\ \texttt{utils}) that is excluded from automatic repair. \\
     \hline
   \end{tabular}
   \caption{Dependency-error subtypes across the 214-row working dataset.}
@@ -124,15 +126,16 @@ Applying this scope splits the 214 rows into the four subtypes of
 \end{table}
 
 The 10 \texttt{system\_library} rows are excluded because they need
-\texttt{apt}-level installation, which is outside the pip-only scope by
-definition. A missing shared library cannot be fixed by any pip
-command, however it is phrased. The 4 \texttt{mapping\_unknown} rows are
-excluded because their failing name (for example a generic module
-called \texttt{utils}) cannot be safely resolved to one specific PyPI
-package without guessing. Guessing a package name is exactly the kind
-of unfounded suggestion this thesis's PyPI-grounding design
-(\Cref{chap:architecture}) is built to avoid. This leaves \textbf{200
-usable} rows and \textbf{14 excluded} rows.
+system-level environment work, such as installing an operating-system package
+in the Docker image. A missing shared library cannot be repaired through a
+pip-only action. The 4 \texttt{mapping\_unknown} rows are excluded because
+their error messages contain a locally or path-ambiguous name, such as
+\texttt{utils} or \texttt{statistics}. This dataset label is different from
+the later situation in which a usable third-party import has no verified
+deterministic distribution match. In that situation, the repair component may
+ask the LLM to suggest one distribution name, but it accepts the suggestion
+only after PyPI and wheel-import verification (\Cref{sec:m-repair-retrieval}).
+This leaves \textbf{200 usable} rows and \textbf{14 excluded} rows.
 
 \begin{table}[htbp]
   \centering
@@ -159,8 +162,7 @@ repair prompts and to run the small real-system pilots reported in
 187-row \texttt{evaluation} split was reserved from prompt and
 repair-strategy tuning: no prompt, mapping entry, or repair rule was
 designed against it. The results reported in \Cref{chap:validation} were
-generated using the final frozen implementation described in
-\Cref{chap:methodology}.
+generated using the implementation described in \Cref{chap:methodology}.
 
 \subsection{Explanation Scope Is Wider Than Repair Scope}
 \label{sec:pd-explanation-scope}
@@ -198,23 +200,32 @@ repair layer.
     % ---------- row of four subtypes ----------
     \node[elig] (c1) {\texttt{missing\_package}\\179\\\footnotesize repair-eligible};
     \node[elig, right=of c1] (c2) {\texttt{wrong\_version}\\21\\\footnotesize repair-eligible};
-    \node[excl, right=26mm of c2] (c3) {\texttt{system\_library}\\10\\\footnotesize excluded from repair};
+    \node[excl, right=34mm of c2] (c3) {\texttt{system\_library}\\10\\\footnotesize excluded from repair};
     \node[excl, right=of c3] (c4) {\texttt{mapping\_unknown}\\4\\\footnotesize excluded from repair};
 
     \coordinate (topmid) at ($(c1)!0.5!(c4)$);
     \node[comp, above=30mm of topmid] (records)
       {214 \texttt{DEPENDENCY\_ERROR} records\\(172 \texttt{ModuleNotFoundError} + 42 \texttt{ImportError})};
-    \node[font=\small, below=8mm of records, text width=6cm, align=center] (classify)
+    \node[font=\small, below=8mm of records, text width=9cm, align=center] (classify)
       {Error classification / repair eligibility};
 
-    \coordinate (busY) at ($(c1.north)+(0,7mm)$);
+    % A plain branch line and four vertical arrows make the direction of
+    % the classification flow unambiguous.
+    \coordinate (c1in) at ($(c1.north)+(0,7mm)$);
+    \coordinate (c2in) at ($(c2.north)+(0,7mm)$);
+    \coordinate (c3in) at ($(c3.north)+(0,7mm)$);
+    \coordinate (c4in) at ($(c4.north)+(0,7mm)$);
+    \coordinate (classifyout) at ($(c1in -| classify.south)$);
     \draw[arr] (records) -- (classify);
-    \draw (classify.south) -- (classify.south |- busY);
-    \draw (c1.north -| busY) -- (c4.north -| busY);
-    \draw[arr] (c1.north -| busY) -- (c1.north);
-    \draw[arr] (c2.north -| busY) -- (c2.north);
-    \draw[arr] (c3.north -| busY) -- (c3.north);
-    \draw[arr] (c4.north -| busY) -- (c4.north);
+    \draw[-] (classify.south) -- (classifyout);
+    \draw[-] (classifyout) -- (c1in);
+    \draw[-] (classifyout) -- (c2in);
+    \draw[-] (classifyout) -- (c3in);
+    \draw[-] (classifyout) -- (c4in);
+    \draw[arr] (c1in) -- (c1.north);
+    \draw[arr] (c2in) -- (c2.north);
+    \draw[arr] (c3in) -- (c3.north);
+    \draw[arr] (c4in) -- (c4.north);
 
     % ---------- aggregate row ----------
     \coordinate (usablemid) at ($(c1)!0.5!(c2)$);
@@ -228,13 +239,13 @@ repair layer.
     \draw[arr] (c4.south) -- (excluded.north);
 
     % ---------- leaves ----------
-    \node[leaf, below left=12mm and 2mm of usable] (dev) {13 development};
-    \node[leaf, below right=12mm and 2mm of usable] (evalset) {187 frozen evaluation};
+    \node[leaf, below=12mm of usable, xshift=-18mm] (dev) {13 development};
+    \node[leaf, below=12mm of usable, xshift=18mm] (evalset) {187 reserved evaluation};
     \draw[arr] (usable) -- (dev);
     \draw[arr] (usable) -- (evalset);
 
-    \node[leaf, below left=12mm and 2mm of excluded] (sys) {10 \texttt{system\_library}};
-    \node[leaf, below right=12mm and 2mm of excluded] (map) {4 \texttt{mapping\_unknown}};
+    \node[leaf, below=12mm of excluded, xshift=-18mm] (sys) {10 \texttt{system\_library}};
+    \node[leaf, below=12mm of excluded, xshift=18mm] (map) {4 \texttt{mapping\_unknown}};
     \draw[arr] (excluded) -- (sys);
     \draw[arr] (excluded) -- (map);
   \end{tikzpicture}%
@@ -242,8 +253,8 @@ repair layer.
   \caption{Scope boundary over the 214-row working dataset. Every record
   enters classification and stays within the explanation objective O1, but
   only \texttt{missing\_package} and \texttt{wrong\_version} records are
-  repair-eligible. Those 200 records split into the development and frozen
-  evaluation sets.}
+repair-eligible. Those 200 records split into the development and reserved
+evaluation sets.}
   \label{fig:pd-scope}
 \end{figure}
 

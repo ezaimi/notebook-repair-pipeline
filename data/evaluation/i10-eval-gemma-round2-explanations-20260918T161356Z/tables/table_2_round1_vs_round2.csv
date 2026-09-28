@@ -1,0 +1,15 @@
+metric,value
+round1_repair_success_rate,0.0
+final_repair_success_rate_up_to_round2,0.0
+round2_eligible,48
+round2_proposal_generated,12
+round2_abstained,36
+round2_attempted,12
+round2_fixed,0
+round2_still_failing,12
+round2_infrastructure_failure,0
+round2_method_failure,0
+round2_non_attempt_reasons,{'abstained_mapping_unknown': 36}
+additional_notebooks_fixed_by_round2,0
+absolute_pp_improvement_from_round2,0.0
+note,"A Round-2-eligible notebook either gets a real proposal from the repair agent (round2_proposal_generated, which FixApplicator then always attempts, giving round2_attempted) or the agent declines again (round2_abstained - see round2_non_attempt_reasons for the exact cause, e.g. mapping_unknown); a Round-2 orchestrator/component fault instead of either is possible in principle and would show up in round2_infrastructure_failure without being in round2_proposal_generated. round2_fixed + round2_still_failing + round2_infrastructure_failure + round2_method_failure sum to round2_attempted's real-attempt outcomes."

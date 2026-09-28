@@ -1,0 +1,49 @@
+{
+  "baseline_runner_sha256": "e474928c9f43f571df82adb32e644ca30257d5f556a3cddde93e270ec260b2a5",
+  "evaluation_records_completed": 187,
+  "evaluation_records_expected": 187,
+  "freeze": {
+    "baseline": {
+      "kind": "notebook-adapted PLLM-style reimplementation",
+      "model": {
+        "max_tokens": 700,
+        "name": "gemma2:9b",
+        "provider": "Ollama",
+        "temperature": 0.1,
+        "timeout_seconds": 300,
+        "top_p": 0.9
+      },
+      "name": "pllm_style_notebook_v1",
+      "network_access_during_evaluation": false,
+      "repair_budget": 2,
+      "source_repository": "https://github.com/checkdgt/fse-aiware-python-dependencies",
+      "source_revision": "11b8e6e45cd0167070df1367e748e00bd67a9b0d"
+    },
+    "comparison_wheel_evidence": {
+      "path": "data/pllm-style-baseline/v2-shared-comparison-wheel-import-index.json",
+      "role": "V2-only distribution-to-import verification evidence",
+      "sha256": "608861665412554ba92f7d673290b71eb7633444af0ab80a5189bd042325dc44"
+    },
+    "created_at": "2026-09-27T00:00:00+02:00",
+    "evaluation_processed": false,
+    "freeze_id": "pllm-style-v2-shared-comparison-freeze-20260927",
+    "frozen_pypi_cache": {
+      "path": "data/pllm-style-baseline/shared-comparison-pypi-cache.json",
+      "sha256": "e98b0ef696e48c910dccbd9153a448e8e37863fca83f9a5780cdeaff53a63538"
+    },
+    "integrity": {
+      "baseline_config_sha256": "85211b339ff4b817260288bba0602c1e81cd0b3c8bfb566d0e671a9e46398d84",
+      "baseline_script_sha256": "01d3153b73e69cb6d139bcf3e8fe981f3eb3c228facf0fdb035eef83413ce58e",
+      "context_dataset_sha256": "510e79649ac92dfb2c9e0b40aa0aa292fd335ee3e611457122a17671571394a4",
+      "fix_applicator_config_sha256": "81b18682ebe01824d649ed854d1389b9b24c31115cad4a17f872480b4e26b213",
+      "pllm_module_link_sha256": "d7af9f58110e87ab21b20f79a54a1b3c5cfd2e9e6dd6cb110b057e8930f1a303",
+      "split_manifest_sha256": "890e9c83c15332a0311a22d691a661e19851adbe4ba04056042b5172aeac4ebf"
+    },
+    "status": "pre_evaluation_frozen"
+  },
+  "freeze_manifest": "data\\pllm-style-baseline\\pllm-style-v2-shared-comparison-freeze-20260927.json",
+  "freeze_manifest_sha256": "b9adc562927dfea64677786a26ed1f49c6f80272a9f3c380d4ecd046176cb8cd",
+  "method": "pllm_style_notebook_v1",
+  "run_id": "pllm-style-v2-shared-comparison-evaluation-20260927T001500Z",
+  "status": "completed"
+}

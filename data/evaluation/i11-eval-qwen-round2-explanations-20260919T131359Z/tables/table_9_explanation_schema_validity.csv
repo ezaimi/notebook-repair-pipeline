@@ -1,0 +1,25 @@
+metric,value
+original_failures_schema_valid,187/187
+original_explanation_schema_validity_rate,1.0
+round2_newly_exposed_failures_schema_valid,50/50
+round2_explanation_schema_validity_rate,1.0
+combined_schema_valid,237/237
+combined_explanation_schema_validity_rate,1.0
+original_explanation_records,187
+round2_explanation_records,50
+total_explanation_records,237
+original_valid,187
+original_failed,0
+round2_valid,50
+round2_failed,0
+combined_valid,237
+combined_failed,0
+round2_reclassified_new_errors,50
+round2_reclassified_without_explanation,0
+round2_explained_repair_eligible,48
+round2_explained_not_repair_eligible_trace_only,2
+original_llm_attempts_incl_retries,187
+round2_llm_attempts_incl_retries,50
+total_llm_attempts_incl_retries,237
+records_with_retry,0
+note,"Record-level schema validity, one record per encountered dependency error. Denominators: original = notebooks processed in this run (comparable with pre-Round-2-explanation runs); round2 = newly reclassified Round-2 errors that received an explanation, INCLUDING non-repairable ones that exist in the trace only (not the repair-eligible, LLM-reached, or executed-round subset); combined = both. Retries are counted only in *_llm_attempts_incl_retries, never as extra records. A Round-2 explanation call is not a repair-agent invocation and does not enter any repair metric (table_1-table_6). These are automated schema checks only; the human explanation-quality study covered original-failure explanations exclusively."

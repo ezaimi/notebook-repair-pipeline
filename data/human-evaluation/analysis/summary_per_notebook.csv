@@ -1,0 +1,13 @@
+notebook_execution_id,subtype,n_participants,n_ratings,median_all_items,pct_agree_or_strongly_agree
+62,missing_package,7,42,5.0,92.85714285714286
+79,missing_package,7,42,5.0,100.0
+94,missing_package,7,42,5.0,100.0
+118,missing_package,7,42,5.0,78.57142857142857
+163,wrong_version,7,42,5.0,85.71428571428571
+172,missing_package,7,42,5.0,92.85714285714286
+175,wrong_version,8,48,5.0,93.75
+197,wrong_version,8,48,5.0,81.25
+211,missing_package,8,48,5.0,87.5
+252,missing_package,8,48,5.0,93.75
+282,missing_package,8,48,5.0,81.25
+398,missing_package,8,48,5.0,81.25

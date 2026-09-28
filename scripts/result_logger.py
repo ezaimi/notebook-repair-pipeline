@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS repair_attempts (
   command                 TEXT,
   rationale               TEXT,
   pypi_evidence           TEXT,
+  declared_constraint     TEXT,
 
   outcome                 TEXT,
   new_error_type          TEXT,
@@ -85,6 +86,7 @@ REPAIR_ATTEMPT_COLUMNS = [
     "command",
     "rationale",
     "pypi_evidence",
+    "declared_constraint",
     "outcome",
     "new_error_type",
     "new_error_message",
@@ -201,6 +203,7 @@ def build_repair_attempt_row(
         created_at = i4_record.get("created_at")
 
     retrieval_result = i4_record.get("retrieval_result")
+    declared_constraint = i4_record.get("declared_constraint")
 
     return {
         "notebook_execution_id": i4_record.get("notebook_execution_id"),
@@ -213,6 +216,7 @@ def build_repair_attempt_row(
         "command": command,
         "rationale": i4_record.get("final_rationale"),
         "pypi_evidence": json.dumps(retrieval_result) if retrieval_result is not None else None,
+        "declared_constraint": json.dumps(declared_constraint) if declared_constraint is not None else None,
         "outcome": outcome,
         "new_error_type": new_error_type,
         "new_error_message": new_error_message,
@@ -226,6 +230,11 @@ def build_repair_attempt_row(
 
 def create_table(conn: sqlite3.Connection) -> None:
     conn.execute(CREATE_TABLE_SQL)
+    # Existing local result databases predate V2. Add the provenance column
+    # without discarding prior rows; SQLite supports this additive migration.
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(repair_attempts)")}
+    if "declared_constraint" not in columns:
+        conn.execute("ALTER TABLE repair_attempts ADD COLUMN declared_constraint TEXT")
     conn.commit()
 
 

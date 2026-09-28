@@ -1,0 +1,6 @@
+metric,value
+proposal_validity_rate,0.0
+grounding_pass_rate,
+end_to_end_valid_grounded_proposal_rate,0.0
+distribution_resolution_accuracy_on_manually_resolvable_diagnostic_sample,0.4117647058823529
+note,"Denominator is the manually resolvable rows in the frozen diagnostic sample (known-mapped + frequent-unmapped + ambiguous import names), not a random or population-representative sample - do not report as population-wide PyPI resolution accuracy."

@@ -1,0 +1,66 @@
+{
+  "method": "matched descriptive comparison",
+  "paired_full_recovery": {
+    "both_methods": [
+      306,
+      307
+    ],
+    "pllm_style_only": [
+      128,
+      129,
+      137,
+      138
+    ],
+    "v2_only": [
+      198
+    ]
+  },
+  "pllm_style_baseline": {
+    "docker_repair_attempts": 177,
+    "final_outcomes": {
+      "abstained": 67,
+      "apply_error": 62,
+      "fixed": 6,
+      "still_failing": 52
+    },
+    "full_notebook_recoveries": 6,
+    "full_notebook_recovery_rate": 0.03208556149732621,
+    "fully_recovered_notebook_execution_ids": [
+      128,
+      129,
+      137,
+      138,
+      306,
+      307
+    ],
+    "notebooks_processed": 187,
+    "targeted_error_resolution_rate": 0.5310734463276836,
+    "targeted_errors_resolved": 94
+  },
+  "trace_integrity": {
+    "pllm_style_trace": "data\\evaluation\\pllm-style-v2-shared-comparison-evaluation-20260927T001500Z\\raw\\pllm_style_traces.jsonl",
+    "pllm_style_trace_sha256": "ebfa538014220dc101d6bd456f2c4c271708b8ebe791a1c6cb2d62418edcbd02",
+    "shared_notebook_execution_ids": 187,
+    "v2_trace": "data\\evaluation\\v2-shared-comparison-evaluation-20260926T001000Z\\raw\\pipeline-runs\\v2-shared-comparison-evaluation-20260926T001000Z.jsonl",
+    "v2_trace_sha256": "6201186cf84b9cedc5fca750ba37f5e4f4c6d953dee2c91c9edf32a41d87d661"
+  },
+  "v2_thesis_pipeline": {
+    "docker_repair_attempts": 152,
+    "final_outcomes": {
+      "abstained": 103,
+      "apply_error": 24,
+      "fixed": 3,
+      "still_failing": 57
+    },
+    "full_notebook_recoveries": 3,
+    "full_notebook_recovery_rate": 0.016042780748663103,
+    "fully_recovered_notebook_execution_ids": [
+      198,
+      306,
+      307
+    ],
+    "notebooks_processed": 187,
+    "targeted_error_resolution_rate": 0.631578947368421,
+    "targeted_errors_resolved": 96
+  }
+}

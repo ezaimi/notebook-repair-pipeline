@@ -1,0 +1,19 @@
+You are helping identify a possible PyPI distribution for one Python import.
+
+The deterministic resolver and a public mapping source did not verify a
+distribution. Suggest at most one PyPI distribution name. This is only a
+candidate: it will be rejected unless PyPI and an inspected wheel prove that
+it provides the requested import. Do not suggest a version, command, code
+change, standard-library module, or local repository file.
+
+Return only one JSON object with exactly these fields:
+{"suggested_distribution": "a PyPI distribution name or null", "rationale": "short reason"}
+
+Observed error:
+{{error_message}}
+Requested import:
+{{failing_module}}
+Deterministic attempts:
+{{deterministic_attempts}}
+Repository dependency context (non-authoritative):
+{{declared_constraint}}

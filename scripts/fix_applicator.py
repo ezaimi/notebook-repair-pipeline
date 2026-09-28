@@ -84,7 +84,10 @@ def default_repository_metadata_lookup(
                 try:
                     from extract_error_contexts import load_repository_metadata
 
-                    connection = sqlite3.connect(f"file:{resolved_path}?mode=ro", uri=True)
+                    # The upstream pipeline may retain a writer lock.  This
+                    # is an explicitly read-only metadata snapshot; V2 also
+                    # records its hash in the evaluation manifest.
+                    connection = sqlite3.connect(f"file:{resolved_path}?mode=ro&immutable=1", uri=True)
                     try:
                         table = load_repository_metadata(connection)
                     finally:
@@ -109,6 +112,7 @@ def resolve_attempt(
     i4_record: Dict[str, Any],
     i2_index: Dict[int, Dict[str, Any]],
     repository_metadata_lookup: Optional[Callable[[int], Optional[Dict[str, Any]]]] = None,
+    require_recorded_commit: bool = False,
 ) -> Dict[str, Any]:
     """Decide, from one i4 result record plus the i2 dataset join, whether
     a Docker attempt should be made. Touches no subprocess, no Docker, no
@@ -214,6 +218,20 @@ def resolve_attempt(
         except Exception:
             repo_meta = {}
 
+    repository_commit = dataset_row.get("repository_commit") or repo_meta.get("commit")
+    requirements_paths = [
+        item.get("path") for item in (dataset_row.get("dependency_file_metadata") or [])
+        if isinstance(item, dict) and item.get("path")
+    ] or _split_paths(repo_meta.get("requirements"))
+    setup_paths = dataset_row.get("repository_setup_paths") or _split_paths(repo_meta.get("setups"))
+
+    if require_recorded_commit and not repository_commit:
+        return {
+            "decision": "skip",
+            "notebook_execution_id": notebook_execution_id,
+            "skip_reason": "recorded_repository_commit_unavailable",
+        }
+
     input_block = i4_record.get("input") or {}
 
     return {
@@ -230,12 +248,14 @@ def resolve_attempt(
         "notebook_id": dataset_row.get("notebook_id"),
         "notebook_name": notebook_name,
         "repository_url": repository_url,
-        "repository_commit": repo_meta.get("commit"),
-        "commit_resolution_note": _describe_missing_commit(
-            repository_id, repository_metadata_lookup, repo_meta
+        "repository_commit": repository_commit,
+        "commit_resolution_note": (
+            None if repository_commit else _describe_missing_commit(
+                repository_id, repository_metadata_lookup, repo_meta
+            )
         ),
-        "requirements_paths": _split_paths(repo_meta.get("requirements")),
-        "setup_paths": _split_paths(repo_meta.get("setups")),
+        "requirements_paths": requirements_paths,
+        "setup_paths": setup_paths,
     }
 
 
@@ -292,6 +312,7 @@ def _base_attempt_result(notebook_execution_id: Any, run_id: str) -> Dict[str, A
         "version": None,
         "argv": None,
         "command": None,
+        "declared_constraint": None,
         "apply_return_code": None,
         "execution_status": None,
         "new_error_type": None,
@@ -342,8 +363,16 @@ def apply_and_validate(
     run_id = run_id or "i5-{}".format(datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
     start = time.monotonic()
 
-    attempt = resolve_attempt(i4_record, i2_index, repository_metadata_lookup)
+    attempt = resolve_attempt(
+        i4_record,
+        i2_index,
+        repository_metadata_lookup,
+        require_recorded_commit=bool(config.get("execution", {}).get("require_recorded_commit", False)),
+    )
     result = _base_attempt_result(attempt.get("notebook_execution_id"), run_id)
+    # Preserve V2 requirements evidence even for a skipped/apply-error path;
+    # it is explanatory provenance, never an instruction for Docker.
+    result["declared_constraint"] = i4_record.get("declared_constraint")
 
     if attempt["decision"] == "skip":
         result["status"] = "skipped"

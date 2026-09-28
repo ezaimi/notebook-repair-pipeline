@@ -18,6 +18,8 @@
 \usepackage{tikz}
 \usetikzlibrary{positioning,fit,arrows.meta,calc}
 \usepackage{xcolor}
+\usepackage{soul}              % line-wrapping yellow highlights for pending text
+\sethlcolor{yellow!35}
 \usepackage[section]{placeins} % forces a float barrier at every \section,
                                 % so a table/figure can never queue past the
                                 % section that introduces it
@@ -92,13 +94,14 @@ Chair of Computer Engineering
 
 \noindent
 Submitted by: Erisa Zaimi\\
-Student ID:\\
-Date: [Submission Date]
+Student ID: 859927\\
+Date: 
 
 \bigskip
 
 \noindent
-Supervising tutor: Dr. Sheeba Samuel
+Examiner: Prof. Dr. Martin Gaedke\\
+Supervisor: Dr. Sheeba Samuel
 
 \vspace{1cm}
 \end{titlepage}
@@ -128,19 +131,34 @@ language models, retrieval-augmented generation, dependency repair}
 %---------------------------------------------------------
 \twocolumn
 \addchap{List of Abbreviations}
-\begin{acronym}[PROV-O]
+\begin{acronym}[Morph-KGC]
  \acro{API}{Application Programming Interface}
  \acro{APR}{Automated Program Repair}
+ \acro{CSV}{Comma-Separated Values}
+ \acro{ESS}{Explanation Satisfaction Scale}
  \acro{FAIR}{Findable, Accessible, Interoperable, Reusable}
+ \acro{FR}{Functional Requirement}
+ \acro{IQR}{Interquartile Range}
+ \acro{IRI}{Internationalized Resource Identifier}
  \acro{JSON}{JavaScript Object Notation}
+ \acro{JSONL}{JSON Lines}
  \acro{KG}{Knowledge Graph}
  \acro{LLM}{Large Language Model}
+ \acro{Morph-KGC}{Knowledge Graph Construction engine}
+ \acro{NFR}{Non-functional Requirement}
+ \acro{Ollama}{Local large language model serving runtime}
+ \acro{PEP}{Python Enhancement Proposal}
  \acro{PMC}{PubMed Central}
  \acro{PROV-O}{PROV Ontology}
  \acro{PyPI}{Python Package Index}
  \acro{RAG}{Retrieval-Augmented Generation}
  \acro{RDF}{Resource Description Framework}
  \acro{RML}{RDF Mapping Language}
+ \acro{RQ}{Research Question}
+ \acro{SHA-256}{Secure Hash Algorithm, 256-bit}
+ \acro{SPARQL}{SPARQL Protocol and RDF Query Language}
+ \acro{Turtle}{Terse RDF Triple Language}
+ \acro{WSL}{Windows Subsystem for Linux}
 \end{acronym}
 
 \onecolumn

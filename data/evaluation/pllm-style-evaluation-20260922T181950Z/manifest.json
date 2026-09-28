@@ -1,0 +1,69 @@
+{
+  "baseline_runner_sha256": "ca47c5bad6ea17db042441a487574f05b92757422ee81c6a5e991f7a4057adb7",
+  "evaluation_records_completed": 187,
+  "evaluation_records_expected": 187,
+  "freeze": {
+    "baseline": {
+      "kind": "notebook-adapted PLLM-style reimplementation",
+      "model": {
+        "artifact_digest": "ff02c3702f32",
+        "max_tokens": 700,
+        "name": "gemma2:9b",
+        "provider": "Ollama",
+        "temperature": 0.1,
+        "timeout_seconds": 300,
+        "top_p": 0.9
+      },
+      "name": "pllm_style_notebook_v1",
+      "network_access_during_evaluation": false,
+      "repair_budget": 2,
+      "source_repository": "https://github.com/checkdgt/fse-aiware-python-dependencies",
+      "source_revision": "11b8e6e45cd0167070df1367e748e00bd67a9b0d"
+    },
+    "created_at": "2026-09-22T20:16:00+02:00",
+    "environment": {
+      "cpu": "Intel Core Ultra 7 155H",
+      "docker_server": "28.5.2 linux/amd64",
+      "memory_bytes": 33630179328,
+      "operating_system": "Windows 11 Pro 10.0.26200 x64",
+      "python_test_runtime": "3.13.7"
+    },
+    "evaluation_processed": false,
+    "freeze_id": "pllm-style-pre-evaluation-freeze-20260922",
+    "frozen_pypi_cache": {
+      "entries": 85,
+      "not_found": 3,
+      "path": "data/pllm-style-baseline/frozen-pypi-cache.json",
+      "resolved": 82,
+      "sha256": "e567d06a24ad8b50e7eee646be691c4a123046e07577446b7446438542edd401"
+    },
+    "integrity": {
+      "baseline_config_sha256": "651ecfc9e57114365568afefa79091599212ad9c518901caed061cc217ca3eaa",
+      "baseline_script_sha256": "5979ba5d0066d0897e29c7125ee5e4e3681a525dd8cfd2d6ec4ba038d6733d0c",
+      "baseline_tests_sha256": "3c5c2b239560527614e02164dc04f77e743f38a3ac35acaf9f3cc0a3ce00ad46",
+      "context_dataset_sha256": "fe1f0cf070c0f8b1c1cf4e9b02f76db7c8604dfd54cff496a7ca2a82300b646d",
+      "fix_applicator_config_sha256": "d02577b07824da27e37c81f5054503c0ac43c09d51ee2bb38aa0df6478724385",
+      "pllm_module_link_sha256": "d7af9f58110e87ab21b20f79a54a1b3c5cfd2e9e6dd6cb110b057e8930f1a303",
+      "protocol_sha256": "bbab07801e45dfcd756c0ba70fe2ffc56bf205b0798fec3a3b31f7f70e62371e",
+      "repository_metadata_db_sha256": "ce049a7e5853a703f12b789e4dd2ef0f9d9b6d3cc7fbd88a237c7d963623a8a6",
+      "split_manifest_sha256": "890e9c83c15332a0311a22d691a661e19851adbe4ba04056042b5172aeac4ebf"
+    },
+    "required_before_comparison_interpretation": [
+      "Run the 187 evaluation records once with this baseline and write the required final-run artefacts.",
+      "Re-run the thesis repair layer under the same frozen evidence, repository metadata, model artifact, and execution configuration.",
+      "Compare paired notebook-level outcomes; do not compare against the earlier live-PyPI thesis run."
+    ],
+    "status": "pre_evaluation_frozen",
+    "validation": {
+      "baseline_unit_tests": "9 passed",
+      "development_pilot_run_id": "pllm-style-dev-pilot-20260922T172000Z",
+      "development_records_completed": 13,
+      "offline_cache_preflight": "85 distributions: 82 resolved, 3 not found, exit code 0"
+    }
+  },
+  "freeze_manifest": "data\\pllm-style-baseline\\pllm-style-pre-evaluation-freeze-20260922.json",
+  "freeze_manifest_sha256": "494f9cfa5d286fd76dc2bd4cd52e995bce17bd66de233bf3beea217f144ad467",
+  "method": "pllm_style_notebook_v1",
+  "run_id": "pllm-style-evaluation-20260922T181950Z",
+  "status": "completed"
+}

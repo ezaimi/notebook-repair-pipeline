@@ -195,3 +195,42 @@ def test_format_warnings_shows_every_warning_when_the_list_is_small():
 def test_format_warnings_is_none_when_there_are_no_warnings():
     values = build_repair_template_values(sample_record(), missing_package_retrieval_result(), "missing_package")
     assert values["retrieval_warnings"] == "none"
+
+
+def test_v2_prompt_labels_repository_constraint_as_non_authoritative():
+    template = (ROOT / "prompts" / "dependency_repair_v2.txt").read_text(encoding="utf-8")
+    declaration = {
+        "status": "declared_constraint_conflict",
+        "matching_declarations": [
+            {"path": "requirements.txt", "line_number": 3, "raw": "scikit-learn<1.0"}
+        ],
+        "compatible_candidate_versions": [],
+        "limitations": [],
+    }
+
+    prompt = render_repair_prompt(
+        sample_record(), missing_package_retrieval_result(), "missing_package", template, declaration
+    )
+
+    assert "declared_constraint_conflict" in prompt
+    assert "requirements.txt:3: scikit-learn<1.0" in prompt
+    assert "non-authoritative" in prompt
+    assert "{{" not in prompt
+
+
+def test_v2_prompt_explains_a_known_import_alias_declaration_conflict():
+    template = (ROOT / "prompts" / "dependency_repair_v2.txt").read_text(encoding="utf-8")
+    declaration = {
+        "status": "declared_constraint_conflict",
+        "matching_declarations": [],
+        "alias_declarations": [{
+            "path": "requirements.txt", "line_number": 1, "raw": "sklearn", "expected_distribution": "scikit-learn"
+        }],
+        "limitations": ["declared_import_alias_not_distribution"],
+    }
+
+    prompt = render_repair_prompt(
+        sample_record(), missing_package_retrieval_result(), "missing_package", template, declaration
+    )
+
+    assert "sklearn (known import alias; expected distribution: scikit-learn)" in prompt

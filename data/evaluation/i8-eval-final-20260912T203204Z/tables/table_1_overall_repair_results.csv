@@ -1,0 +1,8 @@
+metric,value
+system_level_repair_success_rate,0.0
+round1_repair_success_rate,0.0
+final_repair_success_rate,0.0
+conditional_repair_success_rate,
+method_only_success_rate,0.0
+infrastructure_failure_rate,0.32620320855614976
+abstention_rate,0.6737967914438503
